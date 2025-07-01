@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(find:*)",
+      "Bash(touch:*)",
+      "Bash(ls:*)",
+      "Bash(source:*)",
+      "Bash(python test_langgraph.py:*)",
+      "Bash(ruff check:*)",
+      "Bash(mypy:*)",
+      "Bash(make:*)",
+      "Bash(mv:*)"
+    ],
+    "deny": []
+  }
+}

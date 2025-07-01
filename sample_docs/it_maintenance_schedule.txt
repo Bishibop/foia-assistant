@@ -1,0 +1,28 @@
+IT DEPARTMENT - MAINTENANCE SCHEDULE
+Q1 2024
+
+PLANNED MAINTENANCE WINDOWS:
+
+January 2024:
+- Jan 6-7: Network upgrade (Building A)
+- Jan 14: Email server patches
+- Jan 21: Database maintenance
+- Jan 28: Firewall updates
+
+February 2024:
+- Feb 3-4: Data center cooling system
+- Feb 11: Backup system testing
+- Feb 18: Security patches
+- Feb 25: Storage array expansion
+
+March 2024:
+- Mar 3: Annual disaster recovery drill
+- Mar 10: VPN gateway upgrade
+- Mar 17: Certificate renewals
+- Mar 24-25: Full system maintenance
+
+Contact IT Help Desk for questions:
+Phone: 555-555-4357 (HELP)
+Email: ithelpdesk@agency.gov
+
+All maintenance performed during weekend hours unless otherwise noted.

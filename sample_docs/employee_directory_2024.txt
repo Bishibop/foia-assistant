@@ -1,0 +1,35 @@
+AGENCY EMPLOYEE DIRECTORY - Q1 2024
+====================================
+
+EXECUTIVE OFFICE
+----------------
+Director: Patricia Johnson
+Phone: 555-100-0001
+Email: pjohnson@agency.gov
+SSN: 234-56-7890
+
+Deputy Director: Michael Chen
+Phone: 555-100-0002
+Email: mchen@agency.gov
+SSN: 345-67-8901
+
+PROJECT MANAGEMENT OFFICE
+------------------------
+Project Blue Sky Lead: John Smith
+Phone: 555-123-4567
+Email: jsmith@agency.gov
+SSN: 123-45-6789
+
+Senior PM: Sarah Jones
+Phone: 555-234-5678
+Email: sjones@agency.gov
+SSN: 456-78-9012
+
+IT DEPARTMENT
+-------------
+CTO: David Kumar
+Phone: 555-300-0001
+Email: dkumar@agency.gov
+SSN: 567-89-0123
+
+Updated: January 1, 2024
