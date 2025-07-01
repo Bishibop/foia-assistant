@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from ...exceptions import DocumentLoadError
+from ...utils.error_handling import create_error_response
 from ..state import DocumentState
 
 
@@ -14,6 +15,10 @@ def load_document(state: DocumentState) -> dict:
         Dict with content or error
 
     """
+    # If content is already provided, just return empty dict (no update needed)
+    if state.get("content"):
+        return {}
+
     try:
         filename = state.get("filename")
         if not filename:
@@ -39,8 +44,12 @@ def load_document(state: DocumentState) -> dict:
         return {"content": content}
 
     except DocumentLoadError as e:
-        return {"error": str(e)}
+        return create_error_response(e, classification=None)
     except UnicodeDecodeError:
-        return {"error": f"Unable to decode file (not UTF-8): {filename}"}
+        return create_error_response(
+            f"Unable to decode file (not UTF-8): {filename}", classification=None
+        )
     except Exception as e:
-        return {"error": f"Unexpected error loading document: {e!s}"}
+        return create_error_response(
+            f"Unexpected error loading document: {e!s}", classification=None
+        )

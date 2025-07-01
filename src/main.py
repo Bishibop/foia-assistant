@@ -1,16 +1,24 @@
 import sys
+from pathlib import Path
 
+from dotenv import load_dotenv
 from PyQt6.QtWidgets import QApplication
 
-from gui.main_window import MainWindow
+from .constants import APP_STYLE
+from .gui.main_window import MainWindow
 
 
 def main() -> None:
     """Launch the FOIA Response Assistant application."""
+    # Load environment variables from .env file
+    # Find the .env file relative to this script
+    env_path = Path(__file__).parent.parent / ".env"
+    load_dotenv(env_path)
+
     app = QApplication(sys.argv)
 
     # Set application style
-    app.setStyle("Fusion")
+    app.setStyle(APP_STYLE)
 
     # Create and show main window
     window = MainWindow()

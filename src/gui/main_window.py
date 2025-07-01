@@ -1,5 +1,14 @@
 from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget
 
+from ..constants import (
+    TAB_PROCESSED,
+    TAB_PROCESSING,
+    TAB_REVIEW,
+    WINDOW_INITIAL_POSITION,
+    WINDOW_INITIAL_SIZE,
+    WINDOW_TITLE,
+)
+from .styles import MAIN_WINDOW_STYLE
 from .tabs.processed_tab import ProcessedTab
 from .tabs.processing_tab import ProcessingTab
 from .tabs.review_tab import ReviewTab
@@ -14,8 +23,13 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("FOIA Response Assistant")
-        self.setGeometry(100, 100, 1200, 800)
+        self.setWindowTitle(WINDOW_TITLE)
+        self.setGeometry(
+            WINDOW_INITIAL_POSITION[0],
+            WINDOW_INITIAL_POSITION[1],
+            WINDOW_INITIAL_SIZE[0],
+            WINDOW_INITIAL_SIZE[1],
+        )
 
         # Create central widget and layout
         central_widget = QWidget()
@@ -32,33 +46,12 @@ class MainWindow(QMainWindow):
         self.processed_tab = ProcessedTab()
 
         # Add tabs to widget
-        self.tab_widget.addTab(self.processing_tab, "Processing")
-        self.tab_widget.addTab(self.review_tab, "Review")
-        self.tab_widget.addTab(self.processed_tab, "Processed")
+        self.tab_widget.addTab(self.processing_tab, TAB_PROCESSING)
+        self.tab_widget.addTab(self.review_tab, TAB_REVIEW)
+        self.tab_widget.addTab(self.processed_tab, TAB_PROCESSED)
 
         # Apply styling
         self._apply_styling()
 
     def _apply_styling(self) -> None:
-        self.setStyleSheet(
-            """
-            QMainWindow {
-                background-color: #f5f5f5;
-            }
-            QTabWidget::pane {
-                border: 1px solid #ddd;
-                background-color: white;
-            }
-            QTabBar::tab {
-                padding: 8px 16px;
-                margin-right: 2px;
-            }
-            QTabBar::tab:selected {
-                background-color: white;
-                border-bottom: 2px solid #0066cc;
-            }
-            QTabBar::tab:!selected {
-                background-color: #f0f0f0;
-            }
-        """
-        )
+        self.setStyleSheet(MAIN_WINDOW_STYLE)

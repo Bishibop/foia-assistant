@@ -14,7 +14,10 @@
       "Bash(black:*)",
       "Bash(grep:*)",
       "Bash(python -m ruff check:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(rm:*)",
+      "Bash(echo:*)"
     ],
     "deny": []
   }

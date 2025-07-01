@@ -1,4 +1,4 @@
-"""Data models for FOIA Response Assistant."""
+"""Data models for the FOIA Response Assistant."""
 
 from .document import Document
 

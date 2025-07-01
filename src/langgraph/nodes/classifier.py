@@ -4,6 +4,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from ...config import MODEL_CONFIG
+from ...utils.error_handling import create_error_response
 from ..state import DocumentState
 
 
@@ -23,6 +24,12 @@ def classify_document(state: DocumentState) -> dict:
     """Classify document using OpenAI."""
     if state.get("error"):
         return {}
+
+    # Check for API key
+    import os
+
+    if not os.getenv("OPENAI_API_KEY"):
+        return create_error_response("OPENAI_API_KEY environment variable not set")
 
     try:
         # Initialize the model with JSON mode
@@ -81,9 +88,4 @@ def classify_document(state: DocumentState) -> dict:
         }
 
     except Exception as e:
-        return {
-            "error": f"Classification error: {e!s}",
-            "classification": "uncertain",
-            "confidence": 0.0,
-            "justification": "Error during classification",
-        }
+        return create_error_response(e)
