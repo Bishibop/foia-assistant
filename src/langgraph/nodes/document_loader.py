@@ -12,6 +12,7 @@ def load_document(state: DocumentState) -> dict:
 
     Returns:
         Dict with content or error
+
     """
     try:
         filename = state.get("filename")

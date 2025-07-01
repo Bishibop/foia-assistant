@@ -2,6 +2,7 @@ from functools import lru_cache
 from typing import Any, cast
 
 from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from .nodes.classifier import classify_document
 from .nodes.document_loader import load_document
@@ -10,11 +11,12 @@ from .state import DocumentState
 
 
 @lru_cache(maxsize=1)
-def get_compiled_workflow() -> Any:
+def get_compiled_workflow() -> CompiledStateGraph[DocumentState, Any]:
     """Get or create the compiled workflow (cached).
 
     Returns:
         Compiled LangGraph workflow
+
     """
     # Create a new graph
     workflow = StateGraph(DocumentState)
@@ -47,6 +49,7 @@ def create_initial_state(filename: str, foia_request: str) -> DocumentState:
 
     Returns:
         Initial document state
+
     """
     return {
         "filename": filename,
@@ -72,6 +75,7 @@ def process_document(filename: str, foia_request: str) -> DocumentState:
 
     Returns:
         Document state after processing
+
     """
     # Get cached workflow
     app = get_compiled_workflow()

@@ -1,5 +1,5 @@
-"""
-Mock classifier for testing without OpenAI API key.
+"""Mock classifier for testing without OpenAI API key.
+
 This simulates realistic classification based on document content.
 """
 
@@ -8,7 +8,6 @@ from ..state import DocumentState
 
 def mock_classify_document(state: DocumentState) -> dict:
     """Mock classify document for testing."""
-
     if state.get("error"):
         return {}
 

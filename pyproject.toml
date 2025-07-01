@@ -71,11 +71,18 @@ select = [
     "DTZ",  # flake8-datetimez
     "T10",  # flake8-debugger
     "RUF",  # Ruff-specific rules
+    "ANN",  # flake8-annotations
+    "D",    # pydocstyle
+    "SIM",  # flake8-simplify
 ]
 ignore = [
     "E501",  # Line length handled by Black
     "B008",  # Do not perform function calls in argument defaults
     "N818",  # Exception names should be named with an Error suffix
+    "D100",  # Missing docstring in public module
+    "D104",  # Missing docstring in public package
+    "D105",  # Missing docstring in magic method
+    "D107",  # Missing docstring in __init__
 ]
 
 [tool.ruff.lint.per-file-ignores]

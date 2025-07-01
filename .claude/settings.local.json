@@ -10,7 +10,11 @@
       "Bash(ruff check:*)",
       "Bash(mypy:*)",
       "Bash(make:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(black:*)",
+      "Bash(grep:*)",
+      "Bash(python -m ruff check:*)",
+      "Bash(python:*)"
     ],
     "deny": []
   }

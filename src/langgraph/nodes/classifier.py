@@ -21,7 +21,6 @@ class ClassificationResult(BaseModel):
 
 def classify_document(state: DocumentState) -> dict:
     """Classify document using OpenAI."""
-
     if state.get("error"):
         return {}
 

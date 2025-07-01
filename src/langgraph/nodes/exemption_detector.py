@@ -4,7 +4,6 @@ from ..state import DocumentState
 
 def detect_exemptions(state: DocumentState) -> dict:
     """Detect potential PII exemptions in the document."""
-
     # Only process responsive documents
     if state.get("classification") != "responsive":
         return {"exemptions": []}
