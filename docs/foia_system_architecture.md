@@ -1,7 +1,7 @@
 # FOIA Response Assistant - System Architecture
 
 ## Overview
-The FOIA Response Assistant is a desktop application designed to accelerate Freedom of Information Act document review using AI-powered classification and human-in-the-loop learning. This document describes the system architecture, technical design decisions, and implementation details.
+The FOIA Response Assistant is a desktop application designed to accelerate Freedom of Information Act document review using AI-powered classification and human-in-the-loop learning.
 
 ## System Goals
 - Process thousands of documents efficiently with AI assistance
@@ -24,7 +24,7 @@ The FOIA Response Assistant is a desktop application designed to accelerate Free
 │                      PyQt6 GUI Layer                        │
 │  ┌──────────────┬─────────────┬──────────────┬──────────┐  │
 │  │ Processing   │ Review Tab  │ Processed    │ Export   │  │
-│  │ Tab          │ (Phase 4)   │ Tab (Phase 6)│ Tab      │  │
+│  │ Tab          │(Implemented)│ Tab (Phase 6)│ Tab      │  │
 │  └──────┬───────┴─────────────┴──────────────┴──────────┘  │
 │         │                                                    │
 │  ┌──────▼────────────────────────────────────────────────┐  │
@@ -85,6 +85,7 @@ The FOIA Response Assistant is a desktop application designed to accelerate Free
 - **In-Memory Only** - No persistence in current implementation
   - Document list maintained in ProcessingTab
   - Statistics tracked in ProcessingWorker
+  - Review queue maintained in ReviewTab
   - No SQLite implementation yet
 - **JSON** - Format for OpenAI API responses and data passing
 
@@ -100,6 +101,9 @@ The FOIA Response Assistant is a desktop application designed to accelerate Free
   - `stats_updated(responsive, non_responsive, uncertain)` - Statistics
   - `processing_complete()` - Batch completion signal
   - `error_occurred(str)` - Error propagation
+  - `documents_processed(list[Document])` - Documents ready for review
+- **Review Signals**: ReviewTab signals for decision tracking
+  - `review_completed(Document)` - Document decision made
 
 ### Processing Pipeline
 1. User selects folder and enters FOIA request
@@ -108,6 +112,9 @@ The FOIA Response Assistant is a desktop application designed to accelerate Free
 4. Each document result emitted via Qt signal
 5. GUI updates in real-time with progress and results
 6. Statistics accumulated and displayed
+7. On completion, documents sent to Review tab queue
+8. User reviews each document with AI recommendations
+9. Human decisions captured and stored in Document objects
 
 ### Error Handling Strategy
 - Graceful degradation on errors
@@ -179,16 +186,17 @@ workflow.add_edge("detect_exemptions", END)
    - Falls back to "uncertain" on errors
    
 3. **Exemption Detection** (`detect_exemptions`)
-   - Regex-based detection of PII
+   - Regex-based detection of PII (only for responsive documents)
    - Detects SSNs (XXX-XX-XXXX format)
-   - Detects phone numbers (XXX-XXX-XXXX format)
+   - Detects phone numbers (multiple US formats)
+   - Detects email addresses (excluding government domains)
    - Marks with FOIA exemption code "b6"
-   - Records position information for future redaction
+   - Records position information for highlighting
+   - Validates and warns about overlapping exemptions
 
 ### Future Workflow Nodes (Not Implemented)
-4. **Human Review Integration** (Phase 4)
-5. **Learning from Feedback** (Phase 5)
-6. **Batch Processing Optimization**
+4. **Learning from Feedback** (Phase 5)
+5. **Batch Processing Optimization**
 
 ## User Interface Design
 
@@ -198,10 +206,14 @@ workflow.add_edge("detect_exemptions", END)
   - FOIA request text input
   - Real-time status panel
   - Process button and controls
-- **Review Tab** (Phase 4)
-  - Document viewer
-  - AI recommendations display
-  - Decision controls
+  - Improved layout with proper spacing
+- **Review Tab** (Implemented)
+  - Document viewer with PII highlighting
+  - AI classification display with confidence
+  - Decision controls (Approve/Override)
+  - Keyboard shortcuts (Space, R, N, U)
+  - Review queue navigation
+  - 40/60 split layout (document/decision)
 - **Processed Tab** (Phase 6)
   - Completed document list
   - Bulk operations
@@ -214,6 +226,20 @@ workflow.add_edge("detect_exemptions", END)
 - Statistics cards (Responsive/Non-Responsive/Uncertain)
 - Activity log with timestamps
 - Current processing filename indicator
+
+## Code Quality and Refactoring
+- **Refactored UI code** for better maintainability
+  - Extracted magic numbers to named constants
+  - Consolidated button creation with factory functions
+  - Split long initialization methods into focused functions
+  - Added comprehensive error handling and validation
+- **Optimized logging** for production use
+  - Removed verbose debug logging
+  - Retained critical error and warning logs
+  - Added validation for exemption data structures
+- **Improved type safety**
+  - Added missing type hints
+  - Enhanced docstrings with parameter documentation
 
 ## Security Considerations
 - All processing happens locally
@@ -260,13 +286,15 @@ src/
 ├── config.py             # Model configuration
 ├── gui/
 │   ├── main_window.py    # Main application window
-│   ├── styles.py         # Centralized styling
+│   ├── styles.py         # Centralized styling & UI helpers
 │   ├── tabs/
 │   │   ├── processing_tab.py
 │   │   ├── review_tab.py
 │   │   └── processed_tab.py
 │   └── widgets/
-│       └── status_panel.py
+│       ├── status_panel.py
+│       ├── document_viewer.py  # PII highlighting viewer
+│       └── decision_panel.py   # Review decision UI
 ├── langgraph/
 │   ├── state.py          # DocumentState TypedDict
 │   ├── workflow.py       # Workflow compilation
@@ -284,8 +312,9 @@ src/
 
 ## Configuration Management
 - Model selection in `config.py`
-- UI constants in `constants.py`
-- Styling in `gui/styles.py`
+- UI constants in `constants.py` (expanded with sizing constants)
+- Styling in `gui/styles.py` (includes UI factory functions)
+- Regex patterns compiled at module level for performance
 - No user-facing configuration files
 
 ## Dependencies

@@ -31,13 +31,11 @@ def detect_exemptions(state: DocumentState) -> dict[str, list[dict[str, Any]]]:
     
     # Only process responsive documents
     if classification != "responsive":
-        logger.debug(f"Skipping exemption detection for {filename} - classified as: {classification}")
         return {"exemptions": []}
 
     if state.get("error"):
         return {}
 
-    logger.info(f"Detecting exemptions in {filename}")
     exemptions = []
     content = state.get("content", "")
 
@@ -102,20 +100,8 @@ def detect_exemptions(state: DocumentState) -> dict[str, list[dict[str, Any]]]:
             seen.add(key)
             unique_exemptions.append(ex)
 
-    # Log summary
+    # Check for overlapping exemptions that might cause highlighting issues
     if unique_exemptions:
-        logger.info(f"Found {len(unique_exemptions)} exemptions in {filename}")
-        
-        # Log breakdown by type
-        type_counts = {}
-        for ex in unique_exemptions:
-            ex_type = ex["type"]
-            type_counts[ex_type] = type_counts.get(ex_type, 0) + 1
-        
-        for ex_type, count in type_counts.items():
-            logger.info(f"  - {count} {ex_type}(s)")
-            
-        # Check for overlapping or adjacent exemptions that might cause highlighting issues
         sorted_exemptions = sorted(unique_exemptions, key=lambda x: x["start"])
         for i in range(1, len(sorted_exemptions)):
             prev = sorted_exemptions[i-1]

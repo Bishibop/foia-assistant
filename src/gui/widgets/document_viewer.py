@@ -40,15 +40,11 @@ class DocumentViewer(QWidget):
         self._text_display.clear()
         self._text_display.setCurrentCharFormat(QTextCharFormat())  # Reset to default format
 
-        # Log exemption info
+        # Check if a large portion of the document is being highlighted
         if self._exemptions:
-            logger.info(f"DocumentViewer: Displaying {filename} with {len(self._exemptions)} exemptions")
             total_highlighted_chars = sum(ex["end"] - ex["start"] for ex in self._exemptions)
-            logger.info(f"  Total characters to highlight: {total_highlighted_chars} out of {len(content)} total")
             if total_highlighted_chars > len(content) * 0.5:
-                logger.warning(f"  WARNING: More than 50% of document will be highlighted!")
-        else:
-            logger.info(f"DocumentViewer: Displaying {filename} with no exemptions")
+                logger.warning(f"More than 50% of {filename} will be highlighted ({total_highlighted_chars}/{len(content)} chars)")
 
         # Set document header with default format
         default_format = QTextCharFormat()
@@ -108,9 +104,6 @@ class DocumentViewer(QWidget):
                 cursor.setPosition(end_pos, QTextCursor.MoveMode.KeepAnchor)
                 cursor.setCharFormat(highlight_format)
                 
-                # Log first few for debugging
-                if i < 3:
-                    logger.debug(f"Highlighted exemption {i}: {exemption['type']} at {start_pos}-{end_pos}")
             except (KeyError, ValueError, TypeError) as e:
                 logger.error(f"Error processing exemption {i}: {e}")
             except Exception as e:
