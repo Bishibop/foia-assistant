@@ -16,7 +16,19 @@ TAB_PROCESSED = "Processed"
 # GUI Layout constants
 SPLITTER_SIZES = [400, 600]  # 40% config, 60% status
 ACTIVITY_LOG_MAX_HEIGHT = 150
+ACTIVITY_LOG_DEFAULT_HEIGHT = 150
 REQUEST_TEXT_MAX_HEIGHT = 100
+REQUEST_TEXT_MIN_HEIGHT = 80
+REQUEST_TEXT_DEFAULT_HEIGHT = 100
+
+# UI Element sizing
+TITLE_MAX_HEIGHT = 50
+STATUS_MESSAGE_MAX_HEIGHT = 30
+STATUS_MESSAGE_TIMEOUT_MS = 2000
+JUSTIFICATION_TEXT_MAX_HEIGHT = 100
+FEEDBACK_TEXT_MAX_HEIGHT = 80
+DOCUMENT_FONT_SIZE = 10
+SEPARATOR_LENGTH = 80
 
 # Time format
 TIME_FORMAT = "%H:%M:%S"
@@ -69,8 +81,29 @@ BUTTON_STYLE_SECONDARY = """
         border: none;
         border-radius: 3px;
     }
-    QPushButton:hover {
+    QPushButton:hover:enabled {
         background-color: #0052a3;
+    }
+    QPushButton:disabled {
+        background-color: #cccccc;
+        color: #666666;
+    }
+"""
+
+BUTTON_STYLE_WARNING = """
+    QPushButton {
+        padding: 5px 15px;
+        background-color: #ffc107;
+        color: #212529;
+        border: none;
+        border-radius: 3px;
+    }
+    QPushButton:hover:enabled {
+        background-color: #e0a800;
+    }
+    QPushButton:disabled {
+        background-color: #cccccc;
+        color: #666666;
     }
 """
 

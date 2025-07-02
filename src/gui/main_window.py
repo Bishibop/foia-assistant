@@ -50,8 +50,24 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.review_tab, TAB_REVIEW)
         self.tab_widget.addTab(self.processed_tab, TAB_PROCESSED)
 
+        # Connect signals between tabs
+        self._connect_signals()
+
         # Apply styling
         self._apply_styling()
+
+    def _connect_signals(self) -> None:
+        """Connect signals between tabs."""
+        # When processing completes, send documents to review
+        self.processing_tab.documents_processed.connect(self._on_documents_ready)
+
+        # When review completes, we'll handle in Phase 6
+        # self.review_tab.review_completed.connect(self.processed_tab.add_document)
+
+    def _on_documents_ready(self, documents: list) -> None:
+        """Handle documents ready for review."""
+        # Add documents to review queue
+        self.review_tab.add_documents(documents)
 
     def _apply_styling(self) -> None:
         self.setStyleSheet(MAIN_WINDOW_STYLE)

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 
 from ...constants import (
     ACTIVITY_LOG_MAX_HEIGHT,
+    MONOSPACE_FONT_STACK,
     STAT_COLOR_ERRORS,
     STAT_COLOR_NON_RESPONSIVE,
     STAT_COLOR_RESPONSIVE,
@@ -86,21 +87,24 @@ class StatusPanel(QWidget):
 
         self.activity_log = QTextEdit()
         self.activity_log.setReadOnly(True)
-        self.activity_log.setMaximumHeight(ACTIVITY_LOG_MAX_HEIGHT)
+        self.activity_log.setMinimumHeight(ACTIVITY_LOG_MAX_HEIGHT)
+        # Use the first font from the stack
+        font_family = MONOSPACE_FONT_STACK.split(",")[0].strip("'")
         self.activity_log.setStyleSheet(
-            """
-            QTextEdit {
+            f"""
+            QTextEdit {{
                 background-color: #f8f9fa;
                 border: 1px solid #dee2e6;
-                font-family: {MONOSPACE_FONT_STACK};
+                font-family: {font_family};
                 font-size: 12px;
-            }
+            }}
         """
         )
         log_layout.addWidget(self.activity_log)
 
         log_group.setLayout(log_layout)
-        layout.addWidget(log_group)
+        # Allow the log group to expand vertically
+        layout.addWidget(log_group, 1)  # stretch factor of 1
 
         self.setLayout(layout)
 

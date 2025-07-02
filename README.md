@@ -1,24 +1,21 @@
 # FOIA Response Assistant
 
-An AI-powered document classification tool for FOIA (Freedom of Information Act) officers to efficiently process document requests.
-
-## Overview
-
-This application uses LangGraph and OpenAI to automatically classify documents as responsive, non-responsive, or uncertain based on FOIA requests. It includes PII detection for exemptions and learns from human feedback to improve classifications over time.
+An AI-powered tool that classifies documents for FOIA (Freedom of Information Act) requests. It uses LangGraph and OpenAI to determine if documents are responsive, non-responsive, or uncertain based on a given FOIA request.
 
 ## Requirements
 
-- Python 3.11 or higher
+- Python 3.11+
 - OpenAI API key
 
 ## Setup
 
-1. Clone the repository and navigate to the project directory:
+1. Clone and enter the repository:
    ```bash
+   git clone <repository-url>
    cd foia-assistant
    ```
 
-2. Create and activate a virtual environment:
+2. Create virtual environment:
    ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
@@ -26,12 +23,10 @@ This application uses LangGraph and OpenAI to automatically classify documents a
 
 3. Install dependencies:
    ```bash
-   make install-dev
-   # or manually:
    pip install -e ".[dev]"
    ```
 
-4. Set up your OpenAI API key:
+4. Configure API key:
    ```bash
    cp .env.example .env
    # Edit .env and add your OpenAI API key
@@ -39,62 +34,19 @@ This application uses LangGraph and OpenAI to automatically classify documents a
 
 ## Usage
 
-### Running the Document Processor
-
-Process documents from the sample folder:
+Launch the GUI application:
 ```bash
-python test_langgraph.py --folder ./sample_docs --request "All emails about Project Blue Sky"
+source venv/bin/activate && python -m src.main
 ```
 
-### Development Workflow
+To test the application:
+1. Click "Browse" and select the `sample_docs` folder
+2. In the FOIA Request field, enter: "All emails about Project Blue Sky"
+3. Click "Process Documents" to see the classification results
 
-Run code quality checks:
-```bash
-make check  # Runs formatting, linting, and type checking
-```
+## Documentation
 
-Individual commands:
-```bash
-make format      # Format code with Black
-make lint        # Lint with Ruff
-make type-check  # Type check with mypy
-```
-
-## Project Structure
-
-```
-foia-assistant/
-├── src/
-│   ├── langgraph/       # LangGraph workflow components
-│   ├── models/          # Data models
-│   └── gui/             # PyQt6 GUI (Phase 2+)
-├── sample_docs/         # Test documents
-├── docs/                # Project documentation
-├── pyproject.toml       # Project configuration
-└── Makefile            # Development commands
-```
-
-## Development Status
-
-- ✅ Phase 0: Environment Setup
-- ✅ Phase 1: LangGraph Workflow
-- ✅ Phase 1.5: Code Quality Setup
-- ⏳ Phase 2: PyQt6 GUI (Next)
-
-See [docs/foia_implementation_plan.md](docs/foia_implementation_plan.md) for the full development roadmap.
-
-## Testing
-
-Run the test script to verify the workflow:
-```bash
-make test
-```
-
-This will process the sample documents and display classification results.
-
-## Contributing
-
-1. Ensure all code passes quality checks: `make check`
-2. Follow the existing code style and conventions
-3. Add type hints to all new functions
-4. Update tests for new functionality
+See the `docs/` folder for detailed documentation:
+- [Implementation Plan](docs/foia_implementation_plan.md)
+- [Problem Space Analysis](docs/foia_brainlift.md)
+- [Technical Stack](docs/foia_tech_stack.md)

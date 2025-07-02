@@ -1,3 +1,4 @@
+import logging
 import sys
 from pathlib import Path
 
@@ -6,6 +7,13 @@ from PyQt6.QtWidgets import QApplication
 
 from .constants import APP_STYLE
 from .gui.main_window import MainWindow
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 
 
 def main() -> None:
