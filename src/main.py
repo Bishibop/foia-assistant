@@ -15,6 +15,11 @@ logging.basicConfig(
     stream=sys.stdout
 )
 
+# Suppress HTTP request logging from OpenAI/httpx
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+
 
 def main() -> None:
     """Launch the FOIA Response Assistant application."""

@@ -61,8 +61,8 @@ class MainWindow(QMainWindow):
         # When processing completes, send documents to review
         self.processing_tab.documents_processed.connect(self._on_documents_ready)
 
-        # When review completes, we'll handle in Phase 6
-        # self.review_tab.review_completed.connect(self.processed_tab.add_document)
+        # When review completes, send to processed tab
+        self.review_tab.review_completed.connect(self.processed_tab.add_processed_document)
 
     def _on_documents_ready(self, documents: list) -> None:
         """Handle documents ready for review."""
