@@ -1,0 +1,27 @@
+TRAVEL AUTHORIZATION REQUEST
+Request #: TA-2024-001
+
+TRAVELER INFORMATION:
+Name: Dr. Sarah Chen
+Employee ID: SC-4567
+Department: Research Division
+Position: Senior Scientist
+
+TRAVEL DETAILS:
+Destination: Denver, Colorado
+Purpose: Atmospheric Science Conference
+Departure: May 15, 2024
+Return: May 18, 2024
+
+ESTIMATED COSTS:
+Airfare: $450.00
+Hotel (3 nights): $360.00
+Meals: $150.00
+Ground transportation: $40.00
+Total: $1,000.00
+
+JUSTIFICATION:
+Presenting research findings on atmospheric monitoring. This conference is essential for sharing our latest discoveries and networking with other research institutions.
+
+Supervisor Approval: Dr. Michael Roberts
+Date: April 8, 2024

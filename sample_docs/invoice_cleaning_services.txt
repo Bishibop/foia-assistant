@@ -1,0 +1,28 @@
+INVOICE
+
+Clean & Bright Janitorial Services
+456 Service Street, City, State 12345
+Phone: (555) 123-4567
+
+Bill To:
+Federal Agency
+Accounts Payable
+123 Federal Building
+City, State 12345
+
+Invoice #: CB-2024-0315
+Invoice Date: March 31, 2024
+Due Date: April 30, 2024
+
+SERVICES PROVIDED (March 2024):
+- Daily office cleaning (22 days) - $1,980.00
+- Weekly deep cleaning (4 times) - $800.00
+- Window cleaning (monthly) - $350.00
+- Carpet cleaning (conference rooms) - $275.00
+- Supply restocking - $145.00
+
+Subtotal: $3,550.00
+Total Due: $3,550.00
+
+Payment Terms: Net 30 days
+Thank you for your business!

@@ -1,0 +1,19 @@
+PURCHASE ORDER #PO-2024-0125
+
+Vendor: Office Depot
+Order Date: March 25, 2024
+Delivery Date: April 2, 2024
+
+ITEMS ORDERED:
+- Copy paper (20 cases) - $240.00
+- Pens, blue ink (50 boxes) - $125.00
+- Staplers (10 units) - $85.00
+- File folders (500 count) - $45.00
+- Printer toner cartridges (8 units) - $320.00
+
+Subtotal: $815.00
+Tax: $65.20
+Total: $880.20
+
+Approved by: John Martinez, Office Manager
+Delivery Address: 123 Federal Building, Suite 200

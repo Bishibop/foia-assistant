@@ -1,0 +1,20 @@
+From: admin@agency.gov
+To: all-staff@agency.gov
+Date: April 2, 2024
+Subject: Conference Room Booking System Update
+
+Dear Staff,
+
+We've updated the conference room booking system. New features include:
+- 2-week advance booking
+- Automated reminders
+- Equipment reservation options
+- Cancellation notifications
+
+Training sessions available:
+- April 10: 10:00 AM
+- April 12: 2:00 PM
+
+Questions? Contact admin@agency.gov
+
+Admin Team

@@ -19,6 +19,7 @@ class ProcessingTask:
     document_path: Path
     foia_request: str
     task_id: int
+    feedback_examples: list[dict] | None = None
 
 
 @dataclass
@@ -68,13 +69,14 @@ class ParallelDocumentProcessor:
         self._document_callback = callback
 
     def process_documents(
-        self, document_paths: list[Path], foia_request: str
+        self, document_paths: list[Path], foia_request: str, feedback_examples: list[dict] | None = None
     ) -> list[Document]:
         """Process multiple documents in parallel.
 
         Args:
             document_paths: List of document paths to process
             foia_request: The FOIA request text for context
+            feedback_examples: List of feedback examples for few-shot learning
 
         Returns:
             List of processed Document objects
@@ -84,9 +86,14 @@ class ParallelDocumentProcessor:
         self._total_documents = len(document_paths)
         self._start_time = time.time()
 
-        # Create processing tasks
+        # Create processing tasks with feedback examples
         tasks = [
-            ProcessingTask(document_path=path, foia_request=foia_request, task_id=idx)
+            ProcessingTask(
+                document_path=path, 
+                foia_request=foia_request, 
+                task_id=idx,
+                feedback_examples=feedback_examples
+            )
             for idx, path in enumerate(document_paths)
         ]
 
@@ -266,6 +273,7 @@ def process_document_batch(
                         "human_decision": None,
                         "human_feedback": None,
                         "patterns_learned": None,
+                        "feedback_examples": task.feedback_examples,
                         "error": None,
                     }
 

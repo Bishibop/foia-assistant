@@ -30,6 +30,7 @@ from ...constants import (
 )
 from ...models.document import Document
 from ...processing.document_store import DocumentStore
+from ...processing.feedback_manager import FeedbackManager
 from ...processing.request_manager import RequestManager
 from ...processing.worker import ProcessingWorker
 from ..widgets.status_panel import StatusPanel
@@ -54,10 +55,12 @@ class IntakeTab(QWidget):
         self,
         request_manager: RequestManager | None = None,
         document_store: DocumentStore | None = None,
+        feedback_manager: FeedbackManager | None = None,
     ) -> None:
         super().__init__()
         self.request_manager = request_manager
         self.document_store = document_store
+        self.feedback_manager = feedback_manager
         self.selected_folder: Path | None = None
         self.worker: ProcessingWorker | None = None
         self.processed_documents: list[Document] = []
@@ -201,6 +204,7 @@ class IntakeTab(QWidget):
         self.process_btn.clicked.connect(self._start_processing)
         self.process_btn.setStyleSheet(BUTTON_STYLE_PRIMARY)
 
+
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self._cancel_processing)
@@ -316,10 +320,10 @@ class IntakeTab(QWidget):
 
     def _enable_ui_after_processing(self) -> None:
         """Re-enable UI controls after processing."""
-        self.process_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
         self.select_folder_btn.setEnabled(True)
-        # No longer need to enable request text since it's not an input field
+        # Re-check what should be enabled based on current state
+        self._check_ready_to_process()
 
     def _prepare_for_processing(self) -> None:
         """Prepare the UI and emit signals before processing."""
@@ -340,9 +344,12 @@ class IntakeTab(QWidget):
         # Get active request - we've already validated it exists
         active_request = self.request_manager.get_active_request()
 
-        # Create and configure worker with the active request's FOIA text
+        # Create and configure worker with the active request's FOIA text and feedback manager
         self.worker = ProcessingWorker(
-            self.selected_folder, active_request.foia_request_text
+            self.selected_folder,
+            active_request.foia_request_text,
+            request_id=active_request.id,
+            feedback_manager=self.feedback_manager
         )
 
         # Connect signals
@@ -359,7 +366,7 @@ class IntakeTab(QWidget):
         self.worker.processing_complete.connect(self._on_processing_complete)
         self.worker.error_occurred.connect(self._on_error)
         self.worker.stats_updated.connect(self.status_panel.update_statistics)
-        
+
         # Connect new parallel processing signals
         self.worker.processing_rate_updated.connect(self.status_panel.update_processing_rate)
         self.worker.worker_count_updated.connect(self.status_panel.update_worker_count)
@@ -524,3 +531,99 @@ class IntakeTab(QWidget):
 
         # Clear the list of processed documents for this tab
         self.processed_documents.clear()
+
+        # Update feedback statistics if available
+        if self.feedback_manager and self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                stats = self.feedback_manager.get_statistics(active_request.id)
+                if stats["total_corrections"] > 0:
+                    self.status_panel.add_log_entry(
+                        f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] "
+                        f"Feedback available: {stats['total_corrections']} corrections"
+                    )
+
+
+    def _start_processing_unreviewed(self, unreviewed_docs: list[Document]) -> None:
+        """Start processing only unreviewed documents with feedback."""
+        if not self.selected_folder:
+            return
+
+        try:
+            self._disable_ui_during_processing()
+
+            # Emit signal to clear tabs (but we're only processing unreviewed)
+            # This might need adjustment based on desired behavior
+            self.processing_started.emit()
+
+            # Reset status panel
+            self.status_panel.reset()
+
+            # Get list of unreviewed filenames
+            unreviewed_filenames = {doc.filename for doc in unreviewed_docs}
+
+            # Filter txt files to only include unreviewed ones
+            all_txt_files = list(self.selected_folder.glob(SUPPORTED_FILE_EXTENSION))
+            txt_files_to_process = [
+                f for f in all_txt_files
+                if f.name in unreviewed_filenames
+            ]
+
+            if not txt_files_to_process:
+                self._on_error("No unreviewed documents found in folder")
+                self._enable_ui_after_processing()
+                return
+
+            # Log start
+            self.status_panel.add_log_entry(
+                f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] "
+                f"Starting reprocessing of {len(txt_files_to_process)} unreviewed documents"
+            )
+
+            # Get active request
+            active_request = self.request_manager.get_active_request()
+            if not active_request:
+                self._on_error("No active request")
+                self._enable_ui_after_processing()
+                return
+
+            # Create worker with specific file list for unreviewed documents
+            self.worker = ProcessingWorker(
+                self.selected_folder,
+                active_request.foia_request_text,
+                request_id=active_request.id,
+                feedback_manager=self.feedback_manager,
+                file_list=txt_files_to_process  # Pass the filtered file list
+            )
+
+            # Connect signals
+            self._connect_worker_signals()
+
+            # Start processing
+            self.worker.start()
+
+        except Exception as e:
+            logger.error(f"Failed to start reprocessing: {e}")
+            self._on_error(f"Failed to start reprocessing: {e!s}")
+            self._enable_ui_after_processing()
+
+    def _start_reprocessing_with_feedback_from_main(self, folder_path: Path) -> None:
+        """Start reprocessing with feedback called from MainWindow."""
+        # Set the folder path
+        self.selected_folder = folder_path
+        self.folder_label.setText(str(self.selected_folder))
+        
+        # Get unreviewed documents to reprocess
+        if not self.request_manager or not self.document_store:
+            return
+            
+        active_request = self.request_manager.get_active_request()
+        if not active_request:
+            return
+            
+        unreviewed_docs = self.document_store.get_unreviewed_documents(active_request.id)
+        if not unreviewed_docs:
+            return
+            
+        # Start the reprocessing (dialog already confirmed in ReviewTab)
+        self._start_processing_unreviewed(unreviewed_docs)

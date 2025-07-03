@@ -369,10 +369,10 @@ No new controls - just updated status messages during processing:
 
 #### 1. **Key Event Logging Only**
 Track only essential events:
-- **AI Classification**: Result, confidence, model used
-- **User Reviews**: Decision made, override reason
-- **Processing Summary**: Start/end times, document count
-- **Errors**: Classification failures
+- **LLM Processing**: Classification result for each document
+- **Document Views**: When user opens a document in any tab
+- **Exports**: When documents are exported (format, count)
+- **Errors**: Classification failures (if any)
 
 #### 2. **Simple Audit Entry**
 ```python
@@ -389,22 +389,23 @@ class AuditEntry:
 
 #### 3. **Audit Tab Interface (MVP)**
 
-Simple tab with basic table and export:
+Two-panel layout similar to Finalize tab:
 
-**Audit Log Table**:
-```
-Time        Document           Event       AI Result    User Decision    Details
-─────────────────────────────────────────────────────────────────────────────
-10:23:45    contract.txt       classify    Responsive   -               Confidence: 0.92
-10:24:12    contract.txt       review      Responsive   Approved        -
-10:24:13    invoice.txt        classify    Non-resp     -               Confidence: 0.88
-10:24:45    invoice.txt        review      Non-resp     Responsive      Override: Actually responsive
-```
+**Left Panel - Document List**:
+- Checkbox list of all documents across ALL requests
+- Shows document name and request ID
+- Allows multi-selection for filtered export
 
-**Simple Controls**:
-- [Export to CSV] button only
-- No filtering or search in MVP
-- Shows all events for active request
+**Right Panel - Audit Trail**:
+- Read-only chronological event log
+- Shows events from ALL requests (not filtered)
+- Newest events at bottom
+- Format: `Time | Request | Document | Event | Details`
+
+**Export Control**:
+- Single dynamic button in top-right
+- "Export Audit" when no selection
+- "Export Audit (n)" when documents selected
 
 ### Technical Implementation (MVP)
 
@@ -438,21 +439,23 @@ class AuditManager:
         )
         self._entries.append(entry)
     
-    def export_csv(self, filepath: Path):
-        """Export audit log to CSV"""
+    def export_csv(self, filepath: Path, selected_docs: list[str] = None):
+        """Export audit log to CSV, optionally filtered by documents"""
+        entries = self._entries
+        if selected_docs:
+            entries = [e for e in entries if e.document_filename in selected_docs]
+            
         with open(filepath, 'w', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=[
-                'timestamp', 'document', 'event', 'ai_result', 
-                'user_decision', 'details'
+                'timestamp', 'request_id', 'document', 'event', 'details'
             ])
             writer.writeheader()
-            for entry in self._entries:
+            for entry in entries:
                 writer.writerow({
                     'timestamp': entry.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                    'document': entry.document_filename,
+                    'request_id': entry.request_id,
+                    'document': entry.document_filename or '',
                     'event': entry.event_type,
-                    'ai_result': entry.ai_result or '',
-                    'user_decision': entry.user_decision or '',
                     'details': entry.details
                 })
 ```
@@ -470,30 +473,50 @@ audit_manager.log_classification(
 )
 ```
 
-**In Review Tab**:
+**In Document Views**:
 ```python
-# After user decision
-self.audit_manager.log_review(
-    filename=self.current_document.filename,
-    ai_result=self.current_document.classification,
-    user_decision=decision,
-    request_id=self.request_id
+# When document is opened in any tab
+self.audit_manager.log_event(
+    request_id=self.request_id,
+    document_filename=document.filename,
+    event_type="view",
+    details=f"View: {tab_name} tab"
+)
+```
+
+**In Export Functions**:
+```python
+# When documents are exported
+self.audit_manager.log_event(
+    request_id=self.request_id,
+    event_type="export",
+    details=f"Export: {format} ({len(documents)} docs)"
 )
 ```
 
 ### Audit Tab Layout (MVP)
 ```
-┌─────────────────────────────────────────────────────┐
-│ Requests | Intake | Review | Finalize | Audit       │
-├─────────────────────────────────────────────────────┤
-│ Simple Audit Log                                     │
-│ ┌─────────────────────────────────────────────────┐ │
-│ │ Time    Document    Event    AI    User    Note │ │
-│ │ ...     ...         ...      ...   ...     ...  │ │
-│ └─────────────────────────────────────────────────┘ │
-│                                                      │
-│ [Export to CSV]                                      │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│ Requests | Intake | Review | Finalize | Audit          │
+├─────────────────────────────────────────────────────────┤
+│                                         [Export Audit]  │
+├─────────────────────────────────────────────────────────┤
+│ ┌─────────────────────┐ ┌────────────────────────────┐ │
+│ │ Documents           │ │ Audit Trail                │ │
+│ │ ┌─────────────────┐ │ │ ┌──────────────────────┐  │ │
+│ │ │□ contract.txt   │ │ │ │10:23 REQ-001         │  │ │
+│ │ │  REQ-001        │ │ │ │contract.txt          │  │ │
+│ │ │□ invoice.txt    │ │ │ │LLM: Responsive       │  │ │
+│ │ │  REQ-001        │ │ │ │                      │  │ │
+│ │ │□ memo.txt       │ │ │ │10:24 REQ-001         │  │ │
+│ │ │  REQ-002        │ │ │ │contract.txt          │  │ │
+│ │ └─────────────────┘ │ │ │View: Review tab      │  │ │
+│ │                     │ │ │                      │  │ │
+│ │                     │ │ │10:25 REQ-002         │  │ │
+│ │                     │ │ │memo.txt              │  │ │
+│ │                     │ │ │Export: CSV (3 docs)  │  │ │
+│ └─────────────────────┘ │ └──────────────────────┘  │ │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Success Metrics (MVP)

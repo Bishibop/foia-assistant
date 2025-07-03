@@ -1,6 +1,8 @@
 """Background worker thread for LangGraph document processing."""
 
+import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -8,6 +10,11 @@ from ..constants import SUPPORTED_FILE_EXTENSION
 from ..langgraph.workflow import get_compiled_workflow
 from ..models.document import Document
 from .parallel_worker import ParallelDocumentProcessor
+
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from .feedback_manager import FeedbackManager
 
 
 class ProcessingWorker(QThread):
@@ -28,7 +35,13 @@ class ProcessingWorker(QThread):
     worker_count_updated = pyqtSignal(int)  # number of active workers
 
     def __init__(
-        self, folder_path: Path, foia_request: str, use_parallel: bool = True
+        self,
+        folder_path: Path,
+        foia_request: str,
+        use_parallel: bool = True,
+        request_id: str | None = None,
+        feedback_manager: "FeedbackManager | None" = None,
+        file_list: list[Path] | None = None
     ) -> None:
         """Initialize the processing worker.
 
@@ -36,6 +49,9 @@ class ProcessingWorker(QThread):
             folder_path: Path to folder containing documents to process
             foia_request: The FOIA request text to process documents against
             use_parallel: Whether to use parallel processing (default: True)
+            request_id: The FOIA request ID for feedback tracking
+            feedback_manager: Manager for handling user feedback/corrections
+            file_list: Optional specific list of files to process (overrides folder scan)
 
         """
         super().__init__()
@@ -44,6 +60,9 @@ class ProcessingWorker(QThread):
         self.workflow = get_compiled_workflow()
         self._is_cancelled = False
         self.use_parallel = use_parallel
+        self.request_id = request_id
+        self.feedback_manager = feedback_manager
+        self.file_list = file_list  # Optional specific file list
 
         # Track statistics
         self.stats = {
@@ -58,6 +77,18 @@ class ProcessingWorker(QThread):
         # Parallel processor (created when needed)
         self._parallel_processor: ParallelDocumentProcessor | None = None
 
+        # Get feedback examples if available
+        self.feedback_examples = []
+        if self.feedback_manager and self.request_id:
+            self.feedback_examples = self.feedback_manager.get_all_feedback(self.request_id)
+            if self.feedback_examples:
+                logger.info(f"🔄 ProcessingWorker loaded {len(self.feedback_examples)} feedback examples for request {self.request_id}")
+                # Log sample feedback to verify it's being loaded correctly
+                for i, example in enumerate(self.feedback_examples[:2]):  # Show first 2 examples
+                    logger.info(f"📝 Feedback example {i+1}: {example.get('ai_classification', 'N/A')} → {example.get('human_correction', 'N/A')}")
+            else:
+                logger.info(f"❌ ProcessingWorker found NO feedback examples for request {self.request_id}")
+
     def cancel(self) -> None:
         """Cancel the processing operation."""
         self._is_cancelled = True
@@ -65,8 +96,13 @@ class ProcessingWorker(QThread):
     def run(self) -> None:
         """Execute main processing loop in background thread."""
         try:
-            # Get all text files in the folder
-            txt_files = list(self.folder_path.glob(SUPPORTED_FILE_EXTENSION))
+            # Use provided file list or scan folder
+            if self.file_list is not None:
+                txt_files = self.file_list
+            else:
+                # Get all text files in the folder
+                txt_files = list(self.folder_path.glob(SUPPORTED_FILE_EXTENSION))
+
             self.stats["total"] = len(txt_files)
 
             if not txt_files:
@@ -142,7 +178,7 @@ class ProcessingWorker(QThread):
             """Handle processing errors."""
             self.stats["errors"] += 1
             self.error_occurred.emit(error)
-        
+
         def handle_document(document: Document) -> None:
             """Handle completed document."""
             # Update statistics
@@ -152,7 +188,7 @@ class ProcessingWorker(QThread):
                 self.stats["non_responsive"] += 1
             else:
                 self.stats["uncertain"] += 1
-            
+
             # Emit document and updated stats
             self.document_processed.emit(document)
             self.stats_updated.emit(self.stats.copy())
@@ -161,11 +197,11 @@ class ProcessingWorker(QThread):
         self._parallel_processor.set_error_callback(handle_error)
         self._parallel_processor.set_document_callback(handle_document)
 
-        # Process documents
-        documents = self._parallel_processor.process_documents(
-            txt_files, self.foia_request
+        # Process documents with feedback examples
+        self._parallel_processor.process_documents(
+            txt_files, self.foia_request, self.feedback_examples
         )
-        
+
         # Documents are already emitted via callback as they complete
         # Just do a final stats update to ensure everything is synced
         self.stats_updated.emit(self.stats.copy())
@@ -189,6 +225,7 @@ class ProcessingWorker(QThread):
         # Create initial state with content
         initial_state = create_initial_state(file_path.name, self.foia_request)
         initial_state["content"] = content  # Add the content we already read
+        initial_state["feedback_examples"] = self.feedback_examples  # Add feedback examples
 
         # Run through workflow
         final_state = self.workflow.invoke(initial_state)

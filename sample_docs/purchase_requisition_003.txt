@@ -1,0 +1,20 @@
+PURCHASE REQUISITION #PR-2024-003
+
+Requesting Department: Research Division
+Requestor: Dr. Sarah Chen
+Date: April 5, 2024
+
+ITEMS REQUESTED:
+- Laboratory glassware set - $350.00
+- Chemical reagents (atmospheric testing) - $275.00
+- Digital pH meters (2 units) - $180.00
+- Safety equipment - $125.00
+
+Total Request: $930.00
+
+JUSTIFICATION:
+Required for atmospheric composition analysis in the ongoing Blue Sky research project. Current equipment is outdated and affecting measurement accuracy.
+
+Budget Code: 2024-RES-001
+Supervisor Approval: Dr. Michael Roberts
+Date: April 6, 2024

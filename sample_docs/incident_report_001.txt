@@ -1,0 +1,28 @@
+INCIDENT REPORT #IR-2024-001
+
+Date: March 20, 2024
+Time: 2:15 PM
+Location: Research Laboratory B
+Reported by: Dr. Sarah Chen
+
+INCIDENT DESCRIPTION:
+Minor chemical spill during atmospheric composition analysis. Approximately 50ml of testing solution spilled on lab bench during Blue Sky project sample preparation.
+
+IMMEDIATE ACTIONS TAKEN:
+- Area evacuated and secured
+- Spill contained with absorbent materials
+- Safety shower tested (not needed)
+- Ventilation system checked
+
+INJURIES: None reported
+PROPERTY DAMAGE: None
+
+ROOT CAUSE: Equipment malfunction - beaker cracked during heating
+
+CORRECTIVE ACTIONS:
+- Replace defective glassware
+- Inspect all laboratory equipment
+- Review heating protocols
+
+Report Filed: March 21, 2024
+Safety Officer: Mark Stevens

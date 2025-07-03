@@ -1,0 +1,27 @@
+SAFETY INSPECTION REPORT
+Building: Federal Office Complex A
+Inspection Date: March 28, 2024
+Inspector: Mark Stevens, Safety Officer
+
+AREAS INSPECTED:
+- Emergency exits and lighting
+- Fire extinguisher locations and expiration dates
+- First aid stations
+- Laboratory safety equipment
+- Electrical panels and outlets
+
+FINDINGS:
+✓ All emergency exits clear and properly marked
+✓ Fire extinguishers within inspection dates
+✓ First aid kits fully stocked
+⚠ Lab fume hood #3 requires maintenance
+⚠ Conference Room B exit sign bulb burned out
+
+CORRECTIVE ACTIONS REQUIRED:
+1. Schedule fume hood maintenance (Priority: High)
+2. Replace exit sign bulb (Priority: Medium)
+3. Update safety drill schedule
+
+NEXT INSPECTION: June 28, 2024
+
+Report Filed: March 30, 2024

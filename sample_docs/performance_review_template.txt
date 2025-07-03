@@ -1,0 +1,36 @@
+EMPLOYEE PERFORMANCE REVIEW
+Annual Review Period: 2024
+
+EMPLOYEE INFORMATION:
+Name: [Employee Name]
+Position: [Job Title]
+Department: [Department]
+Review Period: January 1, 2024 - December 31, 2024
+
+PERFORMANCE RATINGS:
+(Scale: 1=Below Expectations, 2=Meets Expectations, 3=Exceeds Expectations)
+
+Job Knowledge: [ ]
+Quality of Work: [ ]
+Productivity: [ ]
+Communication: [ ]
+Teamwork: [ ]
+Initiative: [ ]
+
+GOALS FOR NEXT YEAR:
+1. ________________________
+2. ________________________
+3. ________________________
+
+PROFESSIONAL DEVELOPMENT:
+Training Needs: ________________
+Career Objectives: _____________
+
+SUPERVISOR COMMENTS:
+_________________________________
+
+EMPLOYEE COMMENTS:
+_________________________________
+
+Employee Signature: _____________ Date: _______
+Supervisor Signature: ___________ Date: _______

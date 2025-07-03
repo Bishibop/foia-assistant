@@ -34,10 +34,10 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
           │ Qt Signals
 ┌─────────▼───────────────────────────────────────────────────┐
 │               Request Management Layer                       │
-│  ┌─────────────────────┬─────────────────────────────────┐  │
-│  │  Request Manager    │  Document Store                 │  │
-│  │  (CRUD Operations)  │  (Request-scoped Documents)     │  │
-│  └─────────────────────┴─────────────────────────────────┘  │
+│  ┌──────────────┬────────────────┬──────────────────────┐  │
+│  │Request Manager│ Document Store  │ Feedback Manager    │  │
+│  │(CRUD Ops)    │ (Request Docs)  │ (User Corrections)  │  │
+│  └──────────────┴────────────────┴──────────────────────┘  │
 └─────────┬───────────────────────────────────────────────────┘
           │
 ┌─────────▼───────────────────────────────────────────────────┐
@@ -148,6 +148,7 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
   - `request_created(FOIARequest)` - New request created
   - `request_updated(FOIARequest)` - Request details modified
   - `request_deleted(str)` - Request removed from system
+  - `reprocess_requested()` - User wants to reprocess with feedback
 
 ### Processing Pipeline
 1. User creates or selects FOIA request in Requests tab
@@ -157,6 +158,7 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
 5. Documents distributed to workers via task queue
 6. Each worker process:
    - Creates its own LangGraph workflow instance
+   - Receives feedback_examples if reprocessing
    - Processes documents through the workflow
    - Returns results via result queue
 7. Progress aggregated and emitted via Qt signals
@@ -165,8 +167,10 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
 10. On completion, documents stored in DocumentStore for the request
 11. User reviews documents in Review tab (filtered by active request)
 12. Human decisions captured and stored in Document objects
-13. Reviewed documents available in Finalize tab (filtered by active request)
-14. User can export documents (CSV, JSON, Excel, PDF) or generate FOIA response package per request
+13. Corrections automatically captured in FeedbackManager
+14. User can reprocess unreviewed documents with feedback
+15. Reviewed documents available in Finalize tab (filtered by active request)
+16. User can export documents (CSV, JSON, Excel, PDF) or generate FOIA response package per request
 
 ### Error Handling Strategy
 - Graceful degradation on errors
@@ -251,7 +255,20 @@ class DocumentState(TypedDict):
     human_decision: str | None
     human_feedback: str | None
     patterns_learned: list[str] | None
+    feedback_examples: list[dict] | None  # Previous corrections for few-shot learning
     error: str | None
+
+@dataclass  
+class FeedbackEntry:
+    """Represents a single user correction to an AI classification."""
+    document_id: str
+    request_id: str
+    original_classification: str
+    human_decision: str
+    original_confidence: float
+    timestamp: datetime = field(default_factory=datetime.now)
+    document_snippet: str = ""  # First 200 chars of document
+    correction_reason: str = ""
 ```
 
 ### State Management
@@ -261,9 +278,32 @@ class DocumentState(TypedDict):
 - Each node can read and modify state
 - Final state converted to Document dataclass
 - Documents associated with active request via DocumentStore
+- **Learning Feedback**: FeedbackManager tracks user corrections per request
 - No persistent storage between sessions
 
 ## LangGraph Workflow Design
+
+### Learning Feedback System
+
+The system implements a learning mechanism to improve classification accuracy based on user corrections:
+
+1. **Feedback Capture** - When users override AI classifications during review, the system automatically captures:
+   - Original AI classification and confidence
+   - Human-corrected classification
+   - Document snippet (first 200 chars) for context
+   - Request-scoped feedback storage
+
+2. **Feedback Application** - During reprocessing:
+   - Previous corrections are injected into classification prompts as few-shot examples
+   - AI receives detailed context about patterns to look for
+   - Emphasis on content similarity rather than just document type
+   - Pattern matching focuses on keywords, topics, and project names
+
+3. **Reprocessing Workflow**:
+   - User clicks "Reprocess Unreviewed with Feedback" in Review tab
+   - Only unreviewed documents are reprocessed (reviewed documents retained)
+   - All feedback examples included in every classification
+   - No confirmation dialog for immediate processing
 
 ### Workflow Architecture
 ```python
@@ -289,6 +329,9 @@ workflow.add_edge("detect_exemptions", END)
    - Classifies as: responsive, non_responsive, or uncertain
    - Provides confidence score (0-1) and justification
    - Falls back to "uncertain" on errors
+   - Accepts feedback_examples in state for few-shot learning
+   - Enhanced prompts during reprocessing with feedback context
+   - Pattern matching based on content similarity, not just document type
    
 3. **Exemption Detection** (`detect_exemptions`)
    - Regex-based detection of PII (only for responsive documents)
@@ -338,6 +381,9 @@ workflow.add_edge("detect_exemptions", END)
   - Active request display (top-right)
   - 40/60 split layout (document/decision)
   - Previous/Next navigation buttons
+  - Automatic feedback capture on overrides
+  - "Reprocess Unreviewed with Feedback" button
+  - Feedback statistics display (count, patterns)
 - **Finalize Tab**
   - Document table filtered by active request
   - Statistics bar showing request-specific totals
@@ -451,12 +497,14 @@ src/
 ├── models/
 │   ├── request.py        # FOIARequest dataclass (new)
 │   ├── document.py       # Document dataclass
+│   ├── feedback.py       # FeedbackEntry dataclass
 │   └── classification.py # Classification enum
 ├── processing/
-│   ├── request_manager.py # Request CRUD operations (new)
-│   ├── document_store.py  # Request-scoped documents (new)
-│   ├── worker.py         # Background processing thread
-│   └── parallel_worker.py # Multiprocessing document processor
+│   ├── request_manager.py  # Request CRUD operations (new)
+│   ├── document_store.py   # Request-scoped documents (new)
+│   ├── feedback_manager.py # User correction tracking
+│   ├── worker.py          # Background processing thread
+│   └── parallel_worker.py  # Multiprocessing document processor
 └── utils/
     ├── error_handling.py # Standardized error responses
     └── statistics.py     # Document statistics calculations
@@ -527,10 +575,19 @@ pre-commit >= 3.5.0
 
 ### Review Workflow
 - Sequential document review with AI recommendations
-- Override capabilities with feedback capture
+- Override capabilities with automatic feedback capture
 - Keyboard shortcuts for efficiency
 - Visual highlighting of detected PII
 - Review queue filtered by active request
+- Reprocess unreviewed documents with learned feedback
+
+### Learning Feedback System
+- Automatic capture of user corrections during review
+- Request-scoped feedback storage (no cross-contamination)
+- Few-shot learning with previous corrections as examples
+- Reprocess only unreviewed documents with feedback
+- Pattern matching on content similarity, not just document type
+- Real-time feedback statistics display
 
 ### Export and Package Generation
 - Multiple export formats (CSV, JSON)

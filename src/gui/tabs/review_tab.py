@@ -3,12 +3,14 @@ from PyQt6.QtGui import QKeyEvent, QShowEvent
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
 from src.constants import (
+    BUTTON_STYLE_SECONDARY,
     MAIN_LAYOUT_MARGINS,
     STATUS_MESSAGE_MAX_HEIGHT,
     STATUS_MESSAGE_TIMEOUT_MS,
@@ -18,6 +20,7 @@ from src.gui.widgets.decision_panel import DecisionPanel
 from src.gui.widgets.document_viewer import DocumentViewer
 from src.models.document import Document
 from src.processing.document_store import DocumentStore
+from src.processing.feedback_manager import FeedbackManager
 from src.processing.request_manager import RequestManager
 
 
@@ -28,15 +31,18 @@ class ReviewTab(QWidget):
         Document
     )  # Emitted when a document review is completed
     all_documents_reviewed = pyqtSignal()  # Emitted when queue is empty
+    reprocess_requested = pyqtSignal()  # Emitted when user wants to reprocess with feedback
 
     def __init__(
         self,
         request_manager: RequestManager | None = None,
         document_store: DocumentStore | None = None,
+        feedback_manager: FeedbackManager | None = None,
     ) -> None:
         super().__init__()
         self.request_manager = request_manager
         self.document_store = document_store
+        self.feedback_manager = feedback_manager
         self._document_queue: list[Document] = []
         self._current_document: Document | None = None
         self._current_index = 0
@@ -44,6 +50,7 @@ class ReviewTab(QWidget):
         self._update_queue_display()
         self._update_navigation()
         self._decision_panel.clear()  # Initially disable all decision buttons
+        self._update_feedback_panel()  # Initialize feedback panel
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout()
@@ -64,6 +71,10 @@ class ReviewTab(QWidget):
         # Status message
         self._status_message = self._create_status_message()
         layout.addWidget(self._status_message)
+
+        # Reprocess button (feedback panel)
+        feedback_layout = self._create_feedback_panel()
+        layout.addLayout(feedback_layout)
 
         self.setLayout(layout)
 
@@ -148,6 +159,27 @@ class ReviewTab(QWidget):
         status_message.setMaximumHeight(STATUS_MESSAGE_MAX_HEIGHT)
         return status_message
 
+    def _create_feedback_panel(self) -> QHBoxLayout:
+        """Create the feedback panel with reprocess button."""
+        feedback_layout = QHBoxLayout()
+
+        # Feedback info label
+        self._feedback_info_label = QLabel("")
+        self._feedback_info_label.setStyleSheet("color: #666; font-size: 12px; font-style: italic;")
+        feedback_layout.addWidget(self._feedback_info_label)
+
+        feedback_layout.addStretch()
+
+        # Reprocess button
+        self._reprocess_btn = QPushButton("Reprocess Unreviewed with Feedback")
+        self._reprocess_btn.setEnabled(False)
+        self._reprocess_btn.clicked.connect(self._request_reprocess_with_feedback)
+        self._reprocess_btn.setStyleSheet(BUTTON_STYLE_SECONDARY)
+        self._reprocess_btn.setToolTip("Reprocess remaining unreviewed documents using learned patterns from corrections")
+        feedback_layout.addWidget(self._reprocess_btn)
+
+        return feedback_layout
+
     def add_documents(self, documents: list[Document]) -> None:
         """Add documents to the review queue."""
         # If we have a document store and request manager, load from active request
@@ -170,6 +202,9 @@ class ReviewTab(QWidget):
         # Display first document if we don't have one showing
         if self._current_document is None and self._document_queue:
             self._display_document(0)
+
+        # Update feedback panel when documents are added
+        self._update_feedback_panel()
 
     def _display_document(self, index: int) -> None:
         """Display document at given index."""
@@ -241,11 +276,25 @@ class ReviewTab(QWidget):
                     human_feedback=self._current_document.human_feedback,
                 )
 
+                # Capture feedback if human corrected the AI
+                if self.feedback_manager and decision != "approved" and self._current_document.human_decision:
+                    self.feedback_manager.add_feedback(
+                        self._current_document,
+                        active_request.id,
+                        self._current_document.human_decision
+                    )
+
         # Emit signal
         self.review_completed.emit(self._current_document)
 
-        # Show status message
-        self._show_status_message("Decision recorded!")
+        # Show appropriate status message and update feedback panel
+        if (self.feedback_manager and self.request_manager and
+            decision != "approved" and
+            self._current_document.classification != self._current_document.human_decision):
+            self._show_status_message("Decision recorded and feedback captured!")
+            self._update_feedback_panel()  # Update feedback panel after capturing feedback
+        else:
+            self._show_status_message("Decision recorded!")
 
         # Remove from queue
         self._document_queue.pop(self._current_index)
@@ -361,3 +410,65 @@ class ReviewTab(QWidget):
                 # Display first document if available
                 if self._document_queue and not self._current_document:
                     self._display_document(0)
+
+        # Update feedback panel for new request
+        self._update_feedback_panel()
+
+    def _update_feedback_panel(self) -> None:
+        """Update the feedback panel based on current feedback and document state."""
+        if not self.feedback_manager or not self.request_manager:
+            self._feedback_info_label.setText("")
+            self._reprocess_btn.setEnabled(False)
+            return
+
+        active_request = self.request_manager.get_active_request()
+        if not active_request:
+            self._feedback_info_label.setText("")
+            self._reprocess_btn.setEnabled(False)
+            return
+
+        # Get feedback statistics
+        stats = self.feedback_manager.get_statistics(active_request.id)
+
+        if stats["total_corrections"] == 0:
+            self._feedback_info_label.setText("No feedback captured yet")
+            self._reprocess_btn.setEnabled(False)
+        else:
+            # Check if there are unreviewed documents to reprocess
+            has_unreviewed = False
+            if self.document_store:
+                unreviewed_docs = self.document_store.get_unreviewed_documents(active_request.id)
+                has_unreviewed = len(unreviewed_docs) > 0
+
+            if has_unreviewed:
+                self._feedback_info_label.setText(
+                    f"Feedback available: {stats['total_corrections']} corrections (most common: {stats['most_corrected_type']})"
+                )
+                self._reprocess_btn.setEnabled(True)
+            else:
+                self._feedback_info_label.setText(
+                    f"Feedback available: {stats['total_corrections']} corrections (no unreviewed documents)"
+                )
+                self._reprocess_btn.setEnabled(False)
+
+    def _request_reprocess_with_feedback(self) -> None:
+        """Request reprocessing with feedback from the main application."""
+        if not self.feedback_manager or not self.request_manager or not self.document_store:
+            return
+
+        active_request = self.request_manager.get_active_request()
+        if not active_request:
+            return
+
+        # Get feedback and unreviewed document counts
+        feedback_stats = self.feedback_manager.get_statistics(active_request.id)
+        unreviewed_docs = self.document_store.get_unreviewed_documents(active_request.id)
+
+        if feedback_stats["total_corrections"] == 0:
+            return
+
+        if not unreviewed_docs:
+            return
+
+        # Emit signal to request reprocessing immediately
+        self.reprocess_requested.emit()

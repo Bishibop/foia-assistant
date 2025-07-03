@@ -1,0 +1,31 @@
+CYBERSECURITY TRAINING SCHEDULE
+Quarter 2, 2024
+
+MANDATORY TRAINING SESSIONS:
+
+Session 1: Password Security & MFA
+Date: April 15, 2024
+Time: 10:00 AM - 12:00 PM
+Location: Training Room C
+Instructor: Lisa Park, IT Security
+
+Session 2: Phishing Awareness
+Date: April 22, 2024
+Time: 2:00 PM - 4:00 PM
+Location: Virtual (Teams Meeting)
+Instructor: Mark Rodriguez, Security Analyst
+
+Session 3: Data Classification & Handling
+Date: May 6, 2024
+Time: 9:00 AM - 11:00 AM
+Location: Conference Room A
+Instructor: External Consultant
+
+REGISTRATION:
+- Use the training portal to register
+- Complete by April 10, 2024
+- Contact IT Help Desk for technical issues
+
+COMPLETION REQUIREMENT:
+All employees must complete by May 31, 2024.
+Certificates will be issued upon successful completion.

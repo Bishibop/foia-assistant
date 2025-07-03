@@ -62,6 +62,7 @@ def create_initial_state(filename: str, foia_request: str) -> DocumentState:
         "human_decision": None,
         "human_feedback": None,
         "patterns_learned": None,
+        "feedback_examples": None,
         "error": None,
     }
 

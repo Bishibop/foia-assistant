@@ -12,6 +12,7 @@ from ..constants import (
     WINDOW_TITLE,
 )
 from ..processing.document_store import DocumentStore
+from ..processing.feedback_manager import FeedbackManager
 from ..processing.request_manager import RequestManager
 from .styles import MAIN_WINDOW_STYLE
 from .tabs.finalize_tab import FinalizeTab
@@ -40,6 +41,7 @@ class MainWindow(QMainWindow):
         # Initialize managers
         self.request_manager = RequestManager()
         self.document_store = DocumentStore()
+        self.feedback_manager = FeedbackManager()
 
         # Store source folder path
         self.source_folder = None
@@ -55,8 +57,8 @@ class MainWindow(QMainWindow):
 
         # Create tabs with manager references
         self.requests_tab = RequestsTab(self.request_manager)
-        self.intake_tab = IntakeTab(self.request_manager, self.document_store)
-        self.review_tab = ReviewTab(self.request_manager, self.document_store)
+        self.intake_tab = IntakeTab(self.request_manager, self.document_store, self.feedback_manager)
+        self.review_tab = ReviewTab(self.request_manager, self.document_store, self.feedback_manager)
         self.finalize_tab = FinalizeTab(self.request_manager, self.document_store)
 
         # Add tabs to widget (Requests tab first)
@@ -158,10 +160,19 @@ class MainWindow(QMainWindow):
             lambda: self.finalize_tab.set_all_documents_reviewed(True)
         )
 
+        # When reprocess with feedback is requested from review tab
+        self.review_tab.reprocess_requested.connect(self._on_reprocess_requested)
+
     def _on_folder_selected(self, folder: Path) -> None:
         """Store the selected source folder."""
         self.source_folder = folder
         self.finalize_tab.set_source_folder(folder)
+
+    def _on_reprocess_requested(self) -> None:
+        """Handle reprocess request from review tab."""
+        # Switch to intake tab and trigger reprocessing
+        self.tab_widget.setCurrentWidget(self.intake_tab)
+        self._start_reprocessing_with_feedback()
 
     def _clear_all_tabs(self) -> None:
         """Clear all documents from review and finalize tabs."""
@@ -194,6 +205,8 @@ class MainWindow(QMainWindow):
         """Handle request deletion."""
         # Clear associated documents from document store
         self.document_store.clear_request(request_id)
+        # Clear associated feedback
+        self.feedback_manager.clear_feedback(request_id)
         self._update_window_title()
 
     def _update_window_title(self) -> None:
@@ -203,3 +216,15 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"{WINDOW_TITLE} - {active_request.name}")
         else:
             self.setWindowTitle(WINDOW_TITLE)
+
+    def _start_reprocessing_with_feedback(self) -> None:
+        """Start reprocessing unreviewed documents with feedback."""
+        # Check if we have the required folder
+        if not self.source_folder:
+            return
+            
+        # Delegate to IntakeTab's reprocessing logic
+        # We need to call the intake tab's reprocessing method directly
+        self.intake_tab._start_reprocessing_with_feedback_from_main(
+            self.source_folder
+        )

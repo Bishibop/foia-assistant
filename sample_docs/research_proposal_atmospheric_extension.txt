@@ -1,0 +1,26 @@
+RESEARCH PROPOSAL
+Project Title: Atmospheric Monitoring Extension - Phase 2
+Principal Investigator: Dr. Sarah Chen
+Co-Investigator: Dr. Michael Roberts
+Submission Date: April 1, 2024
+
+ABSTRACT:
+Building on the success of our Blue Sky atmospheric research initiative, we propose to extend our monitoring capabilities to include high-altitude atmospheric conditions. This Phase 2 expansion will provide comprehensive data on atmospheric layers and their environmental impact.
+
+OBJECTIVES:
+1. Deploy high-altitude monitoring equipment
+2. Establish baseline measurements for upper atmosphere
+3. Correlate ground-level and high-altitude data
+4. Publish peer-reviewed findings
+
+METHODOLOGY:
+- Balloon-based sensor deployment
+- Satellite data integration
+- Ground station correlation
+- Statistical analysis of blue spectrum variations
+
+BUDGET REQUEST: $750,000
+PROJECT DURATION: 18 months
+
+EXPECTED OUTCOMES:
+Enhanced understanding of atmospheric dynamics and improved environmental monitoring capabilities for federal oversight.

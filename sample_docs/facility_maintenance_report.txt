@@ -1,0 +1,25 @@
+FACILITY MAINTENANCE REPORT
+Building: Federal Office Complex A
+Report Period: March 1-31, 2024
+
+COMPLETED WORK ORDERS:
+- HVAC system inspection (Units 1-6)
+- Elevator safety certification
+- Fire suppression system testing
+- Parking lot lighting repair
+- Conference room AV equipment upgrade
+
+PENDING ITEMS:
+- Roof leak repair (Northwest corner)
+- Carpet replacement (3rd floor)
+- Security camera installation (Lobby)
+
+BUDGET STATUS:
+- Allocated: $125,000
+- Spent: $89,450
+- Remaining: $35,550
+
+Next scheduled maintenance: April 15, 2024
+
+Facilities Manager: Robert Chen
+Submitted: April 2, 2024

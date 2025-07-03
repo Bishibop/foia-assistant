@@ -23,6 +23,7 @@ class DocumentState(TypedDict):
 
     # Learning
     patterns_learned: list[str] | None
+    feedback_examples: list[dict] | None  # List of previous corrections for few-shot learning
 
     # Workflow control
     error: str | None

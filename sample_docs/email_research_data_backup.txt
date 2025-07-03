@@ -1,0 +1,19 @@
+From: it-admin@agency.gov
+To: research-team@agency.gov
+Date: March 18, 2024
+Subject: Research Data Backup - Blue Sky Project Files
+
+Research Team,
+
+Scheduled maintenance on the primary research server requires data backup this weekend. Please ensure all Blue Sky project files are saved locally before Friday 5 PM.
+
+Backup schedule:
+- Saturday 6 AM: Begin data migration
+- Sunday 6 PM: Restore services
+- Monday AM: Verify data integrity
+
+Critical files should be copied to the secure research drive. The atmospheric monitoring data is particularly important for our ongoing sky research initiatives.
+
+Contact IT Help Desk for assistance.
+
+IT Administration

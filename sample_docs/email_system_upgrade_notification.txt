@@ -1,0 +1,30 @@
+From: system-admin@agency.gov
+To: all-staff@agency.gov
+Date: April 4, 2024
+Subject: System Upgrade - Email Server Maintenance
+
+Dear Staff,
+
+Scheduled maintenance on the email server will occur this weekend to improve performance and security.
+
+MAINTENANCE WINDOW:
+Saturday, April 6: 8:00 PM - Sunday, April 7: 6:00 AM
+
+EXPECTED IMPACTS:
+- Email services unavailable during maintenance
+- No access to shared calendars
+- Automatic backup of all messages
+
+PREPARATION:
+- Download important emails before Saturday
+- Use mobile phones for urgent communication
+- External email access will remain available
+
+IMPROVEMENTS AFTER UPGRADE:
+- Faster email processing
+- Enhanced spam filtering
+- Increased storage capacity
+
+Contact IT Help Desk for questions.
+
+System Administration Team
