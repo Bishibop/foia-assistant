@@ -1,7 +1,7 @@
-# FOIA Response Assistant - System Architecture
+# RAPID RESPONSE AI - System Architecture
 
 ## Overview
-The FOIA Response Assistant is a desktop application designed to accelerate Freedom of Information Act document review using AI-powered classification and human-in-the-loop learning.
+RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Information Act document review using AI-powered classification and human-in-the-loop decision making.
 
 ## System Goals
 - Process thousands of documents efficiently with AI assistance
@@ -22,10 +22,10 @@ The FOIA Response Assistant is a desktop application designed to accelerate Free
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      PyQt6 GUI Layer                        │
-│  ┌──────────────┬─────────────┬──────────────┬──────────┐  │
-│  │ Processing   │ Review Tab  │ Processed    │ Export   │  │
-│  │ Tab          │(Implemented)│ Tab (Phase 6)│ Tab      │  │
-│  └──────┬───────┴─────────────┴──────────────┴──────────┘  │
+│  ┌──────────────┬─────────────┬──────────────────────────┐  │
+│  │ Intake Tab   │ Review Tab  │ Finalize Tab             │  │
+│  │              │             │                          │  │
+│  └──────┬───────┴─────────────┴──────────────────────────┘  │
 │         │                                                    │
 │  ┌──────▼────────────────────────────────────────────────┐  │
 │  │            Status Panel (Real-time Updates)           │  │
@@ -83,11 +83,13 @@ The FOIA Response Assistant is a desktop application designed to accelerate Free
 
 ### Data Storage
 - **In-Memory Only** - No persistence in current implementation
-  - Document list maintained in ProcessingTab
+  - Document list maintained in IntakeTab
   - Statistics tracked in ProcessingWorker
   - Review queue maintained in ReviewTab
+  - Processed documents stored in FinalizeTab
   - No SQLite implementation yet
 - **JSON** - Format for OpenAI API responses and data passing
+- **CSV** - Export format for document metadata and exemption logs
 
 ## Architecture Patterns
 
@@ -102,11 +104,14 @@ The FOIA Response Assistant is a desktop application designed to accelerate Free
   - `processing_complete()` - Batch completion signal
   - `error_occurred(str)` - Error propagation
   - `documents_processed(list[Document])` - Documents ready for review
-- **Review Signals**: ReviewTab signals for decision tracking
+- **Tab Communication Signals**:
+  - `folder_selected(Path)` - Folder selection from IntakeTab
+  - `processing_started()` - Clear all tabs when reprocessing
   - `review_completed(Document)` - Document decision made
+  - `all_documents_reviewed()` - Enable finalize actions
 
 ### Processing Pipeline
-1. User selects folder and enters FOIA request
+1. User selects folder and enters FOIA request in Intake tab
 2. ProcessingWorker thread spawned with document list
 3. Documents processed sequentially through LangGraph
 4. Each document result emitted via Qt signal
@@ -115,6 +120,8 @@ The FOIA Response Assistant is a desktop application designed to accelerate Free
 7. On completion, documents sent to Review tab queue
 8. User reviews each document with AI recommendations
 9. Human decisions captured and stored in Document objects
+10. Reviewed documents sent to Finalize tab
+11. User can export documents or generate FOIA response package
 
 ### Error Handling Strategy
 - Graceful degradation on errors
@@ -137,6 +144,18 @@ class Document:
     exemptions: list[dict[str, Any]]  # [{"text": "555-1234", "type": "phone", "exemption_code": "b6", "start": 100, "end": 108}]
     human_decision: str | None = None
     human_feedback: str | None = None
+
+@dataclass
+class ProcessedDocument:
+    document: Document
+    review_timestamp: datetime
+    processing_time: float  # seconds
+    flagged_for_review: bool = False
+
+class Classification(str, Enum):
+    RESPONSIVE = "responsive"
+    NON_RESPONSIVE = "non_responsive"
+    UNCERTAIN = "uncertain"
 
 class DocumentState(TypedDict):
     filename: str
@@ -194,32 +213,44 @@ workflow.add_edge("detect_exemptions", END)
    - Records position information for highlighting
    - Validates and warns about overlapping exemptions
 
-### Future Workflow Nodes (Not Implemented)
-4. **Learning from Feedback** (Phase 5)
-5. **Batch Processing Optimization**
+### Export and Package Generation
+
+4. **Document Export** (Finalize Tab)
+   - Export selected or all documents
+   - Supports CSV and JSON formats
+   - Includes metadata and review decisions
+   
+5. **FOIA Package Generation**
+   - Copies responsive documents to package folder
+   - Generates exemption log CSV
+   - Creates processing summary report
+   - Provides cover letter template
 
 ## User Interface Design
 
 ### Tabbed Interface Structure
-- **Processing Tab** (Implemented)
+- **Intake Tab**
   - Folder selection browser
   - FOIA request text input
   - Real-time status panel
   - Process button and controls
-  - Improved layout with proper spacing
-- **Review Tab** (Implemented)
+  - 40/60 split layout (configuration/status)
+- **Review Tab**
   - Document viewer with PII highlighting
   - AI classification display with confidence
   - Decision controls (Approve/Override)
   - Keyboard shortcuts (Space, R, N, U)
   - Review queue navigation
   - 40/60 split layout (document/decision)
-- **Processed Tab** (Phase 6)
-  - Completed document list
-  - Bulk operations
-- **Export Tab** (Future)
-  - Export configuration
-  - Summary statistics
+  - Previous/Next navigation buttons
+- **Finalize Tab**
+  - Document table with search and filtering
+  - Statistics bar showing totals and agreement rate
+  - Document viewer with decision information
+  - Export options (CSV, JSON, Excel*, PDF*)
+  - Generate FOIA Package functionality
+  - Flag for review capability
+  - 60/40 split layout (document list/viewer)
 
 ### Status Panel Components
 - Progress bar with current/total documents
@@ -227,19 +258,22 @@ workflow.add_edge("detect_exemptions", END)
 - Activity log with timestamps
 - Current processing filename indicator
 
-## Code Quality and Refactoring
-- **Refactored UI code** for better maintainability
-  - Extracted magic numbers to named constants
-  - Consolidated button creation with factory functions
-  - Split long initialization methods into focused functions
-  - Added comprehensive error handling and validation
-- **Optimized logging** for production use
-  - Removed verbose debug logging
-  - Retained critical error and warning logs
-  - Added validation for exemption data structures
-- **Improved type safety**
-  - Added missing type hints
-  - Enhanced docstrings with parameter documentation
+## Code Quality and Standards
+- **Constants Management**
+  - All UI dimensions and styling in `constants.py`
+  - Button styles defined as constants
+  - Layout margins and spacing standardized
+- **Utility Functions**
+  - Statistics calculation extracted to `utils/statistics.py`
+  - Style factory functions in `gui/styles.py`
+- **Type Safety**
+  - Classification enum for document types
+  - Type hints throughout codebase
+  - Dataclasses for structured data
+- **Code Organization**
+  - Methods broken down to single responsibility
+  - Consistent naming conventions
+  - Clear separation of UI and business logic
 
 ## Security Considerations
 - All processing happens locally
@@ -288,9 +322,9 @@ src/
 │   ├── main_window.py    # Main application window
 │   ├── styles.py         # Centralized styling & UI helpers
 │   ├── tabs/
-│   │   ├── processing_tab.py
-│   │   ├── review_tab.py
-│   │   └── processed_tab.py
+│   │   ├── intake_tab.py    # Document intake and processing
+│   │   ├── review_tab.py    # Document review interface
+│   │   └── finalize_tab.py  # Export and package generation
 │   └── widgets/
 │       ├── status_panel.py
 │       ├── document_viewer.py  # PII highlighting viewer
@@ -303,17 +337,24 @@ src/
 │       ├── document_loader.py
 │       └── exemption_detector.py
 ├── models/
-│   └── document.py       # Document dataclass
+│   ├── document.py       # Document dataclass
+│   └── classification.py # Classification enum
 ├── processing/
 │   └── worker.py         # Background processing thread
 └── utils/
-    └── error_handling.py # Standardized error responses
+    ├── error_handling.py # Standardized error responses
+    └── statistics.py     # Document statistics calculations
 ```
 
 ## Configuration Management
 - Model selection in `config.py`
-- UI constants in `constants.py` (expanded with sizing constants)
-- Styling in `gui/styles.py` (includes UI factory functions)
+- UI constants in `constants.py`:
+  - Window settings and titles
+  - Button styles (primary, secondary, danger, warning, decision)
+  - Layout dimensions and margins
+  - Table column widths
+  - UI symbols and emojis
+- Styling in `gui/styles.py` (factory functions for UI elements)
 - Regex patterns compiled at module level for performance
 - No user-facing configuration files
 
@@ -337,7 +378,7 @@ pytest-asyncio >= 0.24.0
 pre-commit >= 3.5.0
 ```
 
-## MVP Constraints
+## Current System Constraints
 - **No configuration files** - Hardcoded settings except API key
 - **No persistence** - Fresh start each session
 - **No automated testing** - Manual testing only
@@ -346,15 +387,32 @@ pre-commit >= 3.5.0
 - **No authentication** - Direct file system access
 - **Flat directories** - No recursive folder processing
 - **Basic error handling** - Fail gracefully, no recovery
+- **Limited export formats** - CSV and JSON only (Excel/PDF placeholders)
 
-## Future Architecture Considerations
-- **Local LLM Support**: Ollama integration for air-gapped environments
-- **Persistent Storage**: SQLite for learning data and history
-- **PDF Processing**: PyPDF2 or pdfplumber integration
-- **Concurrent Processing**: Multiple documents in parallel
-- **Plugin Architecture**: Extensible exemption detectors
-- **Configuration System**: YAML/JSON settings files
-- **Audit Logging**: Comprehensive decision tracking
-- **Export Formats**: Word, PDF, CSV reports
-- **Multi-user Support**: Shared learning database
-- **CI/CD Pipeline**: Automated testing and releases
+## Key Features
+
+### Document Processing
+- Batch processing of text documents
+- AI-powered classification with confidence scores
+- Automatic PII detection and exemption marking
+- Real-time progress tracking
+
+### Review Workflow
+- Sequential document review with AI recommendations
+- Override capabilities with feedback capture
+- Keyboard shortcuts for efficiency
+- Visual highlighting of detected PII
+
+### Export and Package Generation
+- Multiple export formats (CSV, JSON)
+- FOIA response package generation
+- Exemption log creation
+- Processing summary reports
+- Cover letter templates
+
+### User Experience
+- Drag-and-drop folder selection
+- Real-time statistics and progress
+- Search and filter capabilities
+- Responsive split-pane layouts
+- Platform-specific file manager integration

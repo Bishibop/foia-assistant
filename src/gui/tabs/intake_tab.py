@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone  # Using timezone.utc for Python 3.10 compatibility (UTC added in 3.11)
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -57,11 +57,11 @@ class IntakeTab(QWidget):
 
     def _init_ui(self) -> None:
         main_layout = self._create_main_layout()
-        
+
         # Create splitter for configuration and status
         splitter = self._create_content_splitter()
         main_layout.addWidget(splitter)
-        
+
         self.setLayout(main_layout)
 
         # Connect text change to enable/disable process button
@@ -74,9 +74,10 @@ class IntakeTab(QWidget):
 
         # Title
         from ..styles import create_title_label
+
         title = create_title_label("Document Processing")
         main_layout.addWidget(title)
-        
+
         return main_layout
 
     def _create_content_splitter(self) -> QSplitter:
@@ -94,7 +95,7 @@ class IntakeTab(QWidget):
 
         # Set initial splitter sizes (40% config, 60% status)
         splitter.setSizes(SPLITTER_SIZES)
-        
+
         return splitter
 
     def _create_config_widget(self) -> QWidget:
@@ -114,7 +115,7 @@ class IntakeTab(QWidget):
         # Process buttons
         button_layout = self._create_button_layout()
         config_layout.addLayout(button_layout)
-        
+
         # Add stretch at bottom to push content up
         config_layout.addStretch()
 
@@ -138,7 +139,7 @@ class IntakeTab(QWidget):
         folder_layout.addWidget(self.folder_label, 1)
         folder_layout.addWidget(self.select_folder_btn)
         folder_group.setLayout(folder_layout)
-        
+
         return folder_group
 
     def _create_request_section(self) -> QGroupBox:
@@ -158,7 +159,7 @@ class IntakeTab(QWidget):
         self.request_text.setMinimumHeight(REQUEST_TEXT_MIN_HEIGHT)
         self.request_text.setMaximumHeight(REQUEST_TEXT_MAX_HEIGHT)
         request_layout.addWidget(self.request_text)
-        
+
         # Add stretch to push content up within the group box
         request_layout.addStretch()
 
@@ -183,7 +184,7 @@ class IntakeTab(QWidget):
         button_layout.addWidget(self.process_btn)
         button_layout.addWidget(self.cancel_btn)
         button_layout.addStretch()
-        
+
         return button_layout
 
     def _select_folder(self) -> None:
@@ -198,11 +199,11 @@ class IntakeTab(QWidget):
             # Count .txt files and show in status
             txt_files = list(self.selected_folder.glob(SUPPORTED_FILE_EXTENSION))
             self.status_panel.add_log_entry(
-                f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] "
+                f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] "  # timezone.utc for Python 3.10 compat
                 f"Selected folder: {self.selected_folder} "
                 f"(found {len(txt_files)} .txt files)"
             )
-            
+
             # Emit the folder selection
             self.folder_selected.emit(self.selected_folder)
 
@@ -216,71 +217,94 @@ class IntakeTab(QWidget):
 
     def _start_processing(self) -> None:
         """Start processing documents with LangGraph."""
-        if not self.selected_folder or not self.request_text.toPlainText().strip():
+        if not self._validate_processing_inputs():
             return
+
+        try:
+            self._disable_ui_during_processing()
+            self._prepare_for_processing()
+            self._setup_and_start_worker()
+
+        except Exception as e:
+            logger.error(f"Failed to start processing: {e}")
+            self._on_error(f"Failed to start processing: {e!s}")
+            self._enable_ui_after_processing()
+
+    def _validate_processing_inputs(self) -> bool:
+        """Validate that we have necessary inputs for processing."""
+        if not self.selected_folder or not self.request_text.toPlainText().strip():
+            return False
 
         # Validate folder exists
         if not self.selected_folder.exists():
             QMessageBox.critical(
                 self,
                 "Folder Not Found",
-                f"The selected folder no longer exists:\n{self.selected_folder}"
+                f"The selected folder no longer exists:\n{self.selected_folder}",
             )
             self.selected_folder = None
             self.folder_label.clear()
             self._check_ready_to_process()
-            return
+            return False
 
-        try:
-            # Disable buttons during processing
-            self.process_btn.setEnabled(False)
-            self.cancel_btn.setEnabled(True)
-            self.select_folder_btn.setEnabled(False)
-            self.request_text.setReadOnly(True)
+        return True
 
-            # Emit signal to clear all tabs
-            self.processing_started.emit()
-            
-            # Reset status panel and documents list
-            self.status_panel.reset()
-            self.processed_documents.clear()
+    def _disable_ui_during_processing(self) -> None:
+        """Disable UI controls during processing."""
+        self.process_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
+        self.select_folder_btn.setEnabled(False)
+        self.request_text.setReadOnly(True)
 
-            # Log start
-            self.status_panel.add_log_entry(
-                f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Starting processing of folder: {self.selected_folder}"
-            )
+    def _enable_ui_after_processing(self) -> None:
+        """Re-enable UI controls after processing."""
+        self.process_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self.select_folder_btn.setEnabled(True)
+        self.request_text.setReadOnly(False)
 
-            # Create and configure worker
-            self.worker = ProcessingWorker(
-                self.selected_folder, self.request_text.toPlainText().strip()
-            )
+    def _prepare_for_processing(self) -> None:
+        """Prepare the UI and emit signals before processing."""
+        # Emit signal to clear all tabs
+        self.processing_started.emit()
 
-            # Connect signals
-            self.worker.progress_updated.connect(self.status_panel.update_progress)
-            self.worker.document_processing.connect(self._on_document_processing)
-            self.worker.document_processed.connect(self._on_document_processed)
-            self.worker.processing_complete.connect(self._on_processing_complete)
-            self.worker.error_occurred.connect(self._on_error)
-            self.worker.stats_updated.connect(self.status_panel.update_statistics)
+        # Reset status panel and documents list
+        self.status_panel.reset()
+        self.processed_documents.clear()
 
-            # Start processing
-            self.worker.start()
-            
-        except Exception as e:
-            logger.error(f"Failed to start processing: {e}")
-            self._on_error(f"Failed to start processing: {str(e)}")
-            # Re-enable controls
-            self.process_btn.setEnabled(True)
-            self.cancel_btn.setEnabled(False)
-            self.select_folder_btn.setEnabled(True)
-            self.request_text.setReadOnly(False)
+        # Log start
+        self.status_panel.add_log_entry(
+            f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Starting processing of folder: {self.selected_folder}"  # timezone.utc for Python 3.10 compat
+        )
+
+    def _setup_and_start_worker(self) -> None:
+        """Create, configure and start the processing worker."""
+        # Create and configure worker
+        self.worker = ProcessingWorker(
+            self.selected_folder, self.request_text.toPlainText().strip()
+        )
+
+        # Connect signals
+        self._connect_worker_signals()
+
+        # Start processing
+        self.worker.start()
+
+    def _connect_worker_signals(self) -> None:
+        """Connect all worker signals to their handlers."""
+        self.worker.progress_updated.connect(self.status_panel.update_progress)
+        self.worker.document_processing.connect(self._on_document_processing)
+        self.worker.document_processed.connect(self._on_document_processed)
+        self.worker.processing_complete.connect(self._on_processing_complete)
+        self.worker.error_occurred.connect(self._on_error)
+        self.worker.stats_updated.connect(self.status_panel.update_statistics)
 
     def _cancel_processing(self) -> None:
         """Cancel the current processing operation."""
         if self.worker:
             self.worker.cancel()
             self.status_panel.add_log_entry(
-                f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Processing cancelled by user"
+                f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Processing cancelled by user"  # timezone.utc for Python 3.10 compat
             )
 
     def _on_document_processing(self, filename: str) -> None:
@@ -292,7 +316,7 @@ class IntakeTab(QWidget):
         """
         self.status_panel.set_current_document(filename)
         self.status_panel.add_log_entry(
-            f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Processing: {filename}"
+            f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Processing: {filename}"  # timezone.utc for Python 3.10 compat
         )
 
     def _on_document_processed(self, document: Document) -> None:
@@ -312,13 +336,13 @@ class IntakeTab(QWidget):
                 else "N/A"
             )
             log_entry = (
-                f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] "
+                f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] "  # timezone.utc for Python 3.10 compat
                 f"Classified {document.filename} as {document.classification.upper()} "
                 f"(confidence: {confidence_str})"
             )
         else:
             log_entry = (
-                f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] "
+                f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] "  # timezone.utc for Python 3.10 compat
                 f"Failed to classify {document.filename} - check API key"
             )
         self.status_panel.add_log_entry(log_entry)
@@ -326,14 +350,11 @@ class IntakeTab(QWidget):
     def _on_processing_complete(self) -> None:
         """Handle processing complete signal."""
         # Re-enable controls
-        self.process_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
-        self.select_folder_btn.setEnabled(True)
-        self.request_text.setReadOnly(False)
+        self._enable_ui_after_processing()
 
         # Log completion
         self.status_panel.add_log_entry(
-            f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Processing complete!"
+            f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Processing complete!"  # timezone.utc for Python 3.10 compat
         )
 
         # Emit documents for review
@@ -343,7 +364,7 @@ class IntakeTab(QWidget):
         # Log completion summary to activity panel instead of showing alert
         stats = self.worker.stats if self.worker else {}
         self.status_panel.add_log_entry(
-            f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Processing complete! "
+            f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Processing complete! "  # timezone.utc for Python 3.10 compat
             f"Total: {stats.get('total', 0)}, "
             f"Responsive: {stats.get('responsive', 0)}, "
             f"Non-responsive: {stats.get('non_responsive', 0)}, "
@@ -364,7 +385,7 @@ class IntakeTab(QWidget):
 
         """
         self.status_panel.add_log_entry(
-            f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] ERROR: {error_message}"
+            f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] ERROR: {error_message}"  # timezone.utc for Python 3.10 compat
         )
 
         # Show error dialog

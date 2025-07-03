@@ -35,16 +35,22 @@ class DocumentViewer(QWidget):
     ) -> None:
         """Display a document with optional exemption highlighting."""
         self._exemptions = exemptions or []
-        
+
         # Clear and reset formatting
         self._text_display.clear()
-        self._text_display.setCurrentCharFormat(QTextCharFormat())  # Reset to default format
+        self._text_display.setCurrentCharFormat(
+            QTextCharFormat()
+        )  # Reset to default format
 
         # Check if a large portion of the document is being highlighted
         if self._exemptions:
-            total_highlighted_chars = sum(ex["end"] - ex["start"] for ex in self._exemptions)
+            total_highlighted_chars = sum(
+                ex["end"] - ex["start"] for ex in self._exemptions
+            )
             if total_highlighted_chars > len(content) * 0.5:
-                logger.warning(f"More than 50% of {filename} will be highlighted ({total_highlighted_chars}/{len(content)} chars)")
+                logger.warning(
+                    f"More than 50% of {filename} will be highlighted ({total_highlighted_chars}/{len(content)} chars)"
+                )
 
         # Set document header with default format
         default_format = QTextCharFormat()
@@ -73,37 +79,47 @@ class DocumentViewer(QWidget):
             try:
                 # Validate exemption structure
                 if not isinstance(exemption, dict):
-                    logger.warning(f"Exemption {i} is not a dictionary: {type(exemption)}")
+                    logger.warning(
+                        f"Exemption {i} is not a dictionary: {type(exemption)}"
+                    )
                     continue
-                    
+
                 if not all(key in exemption for key in ["start", "end", "type"]):
-                    logger.warning(f"Exemption {i} missing required keys: {exemption.keys()}")
+                    logger.warning(
+                        f"Exemption {i} missing required keys: {exemption.keys()}"
+                    )
                     continue
-                
+
                 # Calculate positions
                 start_pos = content_start + exemption["start"]
                 end_pos = content_start + exemption["end"]
-                
+
                 # Validate positions
                 if exemption["start"] < 0 or exemption["end"] < 0:
-                    logger.warning(f"Exemption {i} has negative position: start={exemption['start']}, end={exemption['end']}")
+                    logger.warning(
+                        f"Exemption {i} has negative position: start={exemption['start']}, end={exemption['end']}"
+                    )
                     continue
-                    
+
                 if exemption["start"] >= exemption["end"]:
-                    logger.warning(f"Exemption {i} has invalid range: start={exemption['start']}, end={exemption['end']}")
+                    logger.warning(
+                        f"Exemption {i} has invalid range: start={exemption['start']}, end={exemption['end']}"
+                    )
                     continue
-                
+
                 # Log unusual positions
                 doc_length = self._text_display.document().characterCount()
                 if end_pos > doc_length:
-                    logger.warning(f"Exemption {i} end position {end_pos} exceeds document length {doc_length}")
+                    logger.warning(
+                        f"Exemption {i} end position {end_pos} exceeds document length {doc_length}"
+                    )
                     continue
-                
+
                 # Move to the exemption position (adjusted for header)
                 cursor.setPosition(start_pos)
                 cursor.setPosition(end_pos, QTextCursor.MoveMode.KeepAnchor)
                 cursor.setCharFormat(highlight_format)
-                
+
             except (KeyError, ValueError, TypeError) as e:
                 logger.error(f"Error processing exemption {i}: {e}")
             except Exception as e:

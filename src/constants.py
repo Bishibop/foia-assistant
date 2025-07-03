@@ -109,12 +109,52 @@ BUTTON_STYLE_WARNING = """
     }
 """
 
+# Decision button style (taller secondary buttons)
+BUTTON_STYLE_DECISION = """
+    QPushButton {
+        padding: 10px 30px;
+        background-color: #0066cc;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        font-size: 16px;
+        font-weight: bold;
+    }
+    QPushButton:hover:enabled {
+        background-color: #0052a3;
+    }
+    QPushButton:disabled {
+        background-color: #cccccc;
+        color: #666666;
+    }
+"""
+
 # Font settings
 MONOSPACE_FONT_STACK = "'Courier New', Courier, Monaco, 'Lucida Console', monospace"
 
 # Layout margins and spacing
 MAIN_LAYOUT_MARGINS = (20, 20, 20, 20)
 WIDGET_SPACING = 10
+
+# Splitter sizes and ratios
+FINALIZE_SPLITTER_SIZES = [600, 400]  # 60/40 ratio for document list/viewer
+REVIEW_SPLITTER_STRETCH = (2, 3)  # 40/60 ratio for viewer/decision panel
+
+# Widget dimensions
+EXPORT_GROUP_MAX_HEIGHT = 80
+DECISION_PANEL_MAX_HEIGHT = 150
+SEARCH_INPUT_MAX_WIDTH = 250
+STATS_LABEL_MAX_HEIGHT = 30
+
+# Table column widths
+TABLE_CHECKBOX_COLUMN_WIDTH = 30
+TABLE_FLAG_COLUMN_WIDTH = 50
+
+# Processing defaults
+DEFAULT_PROCESSING_TIME = 2.5  # seconds
+
+# UI symbols
+FLAG_EMOJI = "🚩"
 
 # Statistics display colors
 STAT_COLOR_RESPONSIVE = "#28a745"

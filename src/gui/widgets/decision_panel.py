@@ -9,13 +9,18 @@ from PyQt6.QtWidgets import (
 )
 
 from src.constants import (
+    BUTTON_STYLE_DECISION,
     FEEDBACK_TEXT_MAX_HEIGHT,
     JUSTIFICATION_TEXT_MAX_HEIGHT,
     STAT_COLOR_NON_RESPONSIVE,
     STAT_COLOR_RESPONSIVE,
     STAT_COLOR_UNCERTAIN,
 )
-from src.gui.styles import create_primary_button, create_secondary_button, create_warning_button
+from src.gui.styles import (
+    create_primary_button,
+    create_secondary_button,
+    create_warning_button,
+)
 
 
 class DecisionPanel(QWidget):
@@ -77,24 +82,7 @@ class DecisionPanel(QWidget):
             lambda: self._make_decision("responsive")
         )
         # Apply custom styling to make this button taller
-        self._override_responsive.setStyleSheet("""
-            QPushButton {
-                padding: 10px 30px;
-                background-color: #0066cc;
-                color: white;
-                border: none;
-                border-radius: 3px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover:enabled {
-                background-color: #0052a3;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-        """)
+        self._override_responsive.setStyleSheet(BUTTON_STYLE_DECISION)
         override_layout.addWidget(self._override_responsive)
 
         self._override_non_responsive = create_secondary_button(
@@ -104,24 +92,7 @@ class DecisionPanel(QWidget):
             lambda: self._make_decision("non_responsive")
         )
         # Apply custom styling to make this button taller
-        self._override_non_responsive.setStyleSheet("""
-            QPushButton {
-                padding: 10px 30px;
-                background-color: #0066cc;
-                color: white;
-                border: none;
-                border-radius: 3px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover:enabled {
-                background-color: #0052a3;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-        """)
+        self._override_non_responsive.setStyleSheet(BUTTON_STYLE_DECISION)
         override_layout.addWidget(self._override_non_responsive)
 
         self._override_uncertain = create_warning_button("Override: Uncertain")
@@ -167,7 +138,7 @@ class DecisionPanel(QWidget):
         """Display the AI classification results."""
         # Store current classification
         self._current_classification = classification
-        
+
         # Update classification with color
         if classification:
             color = {
@@ -220,7 +191,7 @@ class DecisionPanel(QWidget):
     def _enable_buttons(self, classification: str | None = None) -> None:
         # Always enable approve button
         self._approve_button.setEnabled(True)
-        
+
         # Enable override buttons, but disable the one matching current classification
         self._override_responsive.setEnabled(classification != "responsive")
         self._override_non_responsive.setEnabled(classification != "non_responsive")

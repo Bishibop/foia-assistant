@@ -11,8 +11,8 @@ from .gui.main_window import MainWindow
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    stream=sys.stdout
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout,
 )
 
 # Suppress HTTP request logging from OpenAI/httpx

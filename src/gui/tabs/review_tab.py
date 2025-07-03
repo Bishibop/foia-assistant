@@ -3,13 +3,16 @@ from PyQt6.QtGui import QKeyEvent, QShowEvent
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
-from src.constants import MAIN_LAYOUT_MARGINS, STATUS_MESSAGE_MAX_HEIGHT, STATUS_MESSAGE_TIMEOUT_MS
+from src.constants import (
+    MAIN_LAYOUT_MARGINS,
+    STATUS_MESSAGE_MAX_HEIGHT,
+    STATUS_MESSAGE_TIMEOUT_MS,
+)
 from src.gui.styles import create_secondary_button
 from src.gui.widgets.decision_panel import DecisionPanel
 from src.gui.widgets.document_viewer import DocumentViewer
@@ -64,6 +67,7 @@ class ReviewTab(QWidget):
         header_layout = QHBoxLayout()
 
         from ..styles import create_title_label
+
         title = create_title_label("Document Review")
         header_layout.addWidget(title)
 
@@ -90,7 +94,7 @@ class ReviewTab(QWidget):
         self._next_button = create_secondary_button("Next →")
         self._next_button.clicked.connect(self._next_document)
         nav_layout.addWidget(self._next_button)
-        
+
         # Add stretch to keep buttons left-aligned
         nav_layout.addStretch()
 
@@ -99,7 +103,7 @@ class ReviewTab(QWidget):
     def _create_content_splitter(self) -> QSplitter:
         """Create the main content splitter with document viewer and decision panel."""
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        
+
         # Document viewer (left side)
         self._document_viewer = DocumentViewer()
         self._document_viewer.setMinimumWidth(200)  # Allow it to be resized smaller
@@ -114,10 +118,10 @@ class ReviewTab(QWidget):
         # Set initial splitter with stretch factors for 40/60 split
         splitter.setStretchFactor(0, 2)  # Document viewer (40%)
         splitter.setStretchFactor(1, 3)  # Decision panel (60%)
-        
+
         # Ensure splitter handle is visible and draggable
         splitter.setChildrenCollapsible(False)
-        
+
         # Store splitter reference for later sizing
         self._splitter = splitter
 
@@ -174,7 +178,7 @@ class ReviewTab(QWidget):
         current = self._current_index + 1 if total > 0 else 0
 
         self._document_counter.setText(f"{current} / {total}")
-        
+
         # Disable all navigation buttons if no documents
         if total == 0:
             self._prev_button.setEnabled(False)
@@ -240,11 +244,12 @@ class ReviewTab(QWidget):
         if self._current_index < len(self._document_queue) - 1:
             self._display_document(self._current_index + 1)
 
-
     def _show_status_message(self, message: str) -> None:
         """Show temporary status message."""
         self._status_message.setText(message)
-        QTimer.singleShot(STATUS_MESSAGE_TIMEOUT_MS, lambda: self._status_message.setText(""))
+        QTimer.singleShot(
+            STATUS_MESSAGE_TIMEOUT_MS, lambda: self._status_message.setText("")
+        )
 
     def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802
         """Handle keyboard shortcuts."""
@@ -277,7 +282,7 @@ class ReviewTab(QWidget):
     def get_queue_count(self) -> int:
         """Get number of documents in queue."""
         return len(self._document_queue)
-    
+
     def clear_all(self) -> None:
         """Clear all documents from the review queue."""
         self._document_queue.clear()
@@ -292,9 +297,9 @@ class ReviewTab(QWidget):
     def showEvent(self, event: QShowEvent | None) -> None:  # noqa: N802
         """Handle widget show event to properly set splitter sizes."""
         super().showEvent(event)
-        
+
         # Set proper splitter sizes for 40/60 split when widget is shown
-        if hasattr(self, '_splitter') and self._splitter.width() > 0:
+        if hasattr(self, "_splitter") and self._splitter.width() > 0:
             total_width = self._splitter.width() - self._splitter.handleWidth()
             if total_width > 0:
                 doc_viewer_width = int(total_width * 0.4)

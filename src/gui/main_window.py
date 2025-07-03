@@ -32,7 +32,7 @@ class MainWindow(QMainWindow):
             WINDOW_INITIAL_SIZE[0],
             WINDOW_INITIAL_SIZE[1],
         )
-        
+
         # Store source folder path
         self.source_folder = None
 
@@ -65,16 +65,18 @@ class MainWindow(QMainWindow):
         """Connect signals between tabs."""
         # When folder is selected, store it
         self.intake_tab.folder_selected.connect(self._on_folder_selected)
-        
+
         # When processing starts, clear all tabs
         self.intake_tab.processing_started.connect(self._clear_all_tabs)
-        
+
         # When intake completes, send documents to review
         self.intake_tab.documents_processed.connect(self._on_documents_ready)
 
         # When review completes, send to finalize tab
-        self.review_tab.review_completed.connect(self.finalize_tab.add_processed_document)
-        
+        self.review_tab.review_completed.connect(
+            self.finalize_tab.add_processed_document
+        )
+
         # When all documents are reviewed, enable finalize buttons
         self.review_tab.all_documents_reviewed.connect(
             lambda: self.finalize_tab.set_all_documents_reviewed(True)
@@ -84,12 +86,12 @@ class MainWindow(QMainWindow):
         """Store the selected source folder."""
         self.source_folder = folder
         self.finalize_tab.set_source_folder(folder)
-    
+
     def _clear_all_tabs(self) -> None:
         """Clear all documents from review and finalize tabs."""
         self.review_tab.clear_all()
         self.finalize_tab.clear_all()
-    
+
     def _on_documents_ready(self, documents: list) -> None:
         """Handle documents ready for review."""
         # Add documents to review queue
