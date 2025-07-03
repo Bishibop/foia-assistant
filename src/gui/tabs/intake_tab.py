@@ -359,6 +359,10 @@ class IntakeTab(QWidget):
         self.worker.processing_complete.connect(self._on_processing_complete)
         self.worker.error_occurred.connect(self._on_error)
         self.worker.stats_updated.connect(self.status_panel.update_statistics)
+        
+        # Connect new parallel processing signals
+        self.worker.processing_rate_updated.connect(self.status_panel.update_processing_rate)
+        self.worker.worker_count_updated.connect(self.status_panel.update_worker_count)
 
     def _cancel_processing(self) -> None:
         """Cancel the current processing operation."""

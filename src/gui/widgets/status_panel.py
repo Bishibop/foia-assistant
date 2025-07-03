@@ -53,6 +53,26 @@ class StatusPanel(QWidget):
         self.current_doc_label.setStyleSheet("font-style: italic; color: #666;")
         progress_layout.addWidget(self.current_doc_label)
 
+        # Parallel processing info (initially hidden)
+        self.parallel_info_widget = QWidget()
+        parallel_layout = QHBoxLayout()
+        parallel_layout.setContentsMargins(0, 5, 0, 0)
+
+        # Worker count
+        self.worker_label = QLabel("Workers: -")
+        self.worker_label.setStyleSheet("color: #0066cc; font-weight: bold;")
+        parallel_layout.addWidget(self.worker_label)
+
+        # Processing rate
+        self.rate_label = QLabel("Rate: - docs/min")
+        self.rate_label.setStyleSheet("color: #0066cc; font-weight: bold;")
+        parallel_layout.addWidget(self.rate_label)
+
+        parallel_layout.addStretch()
+        self.parallel_info_widget.setLayout(parallel_layout)
+        self.parallel_info_widget.setVisible(False)
+        progress_layout.addWidget(self.parallel_info_widget)
+
         progress_group.setLayout(progress_layout)
         layout.addWidget(progress_group)
 
@@ -196,11 +216,36 @@ class StatusPanel(QWidget):
         if scrollbar:
             scrollbar.setValue(scrollbar.maximum())
 
+    def update_worker_count(self, count: int) -> None:
+        """Update the worker count display.
+
+        Args:
+            count: Number of active workers
+
+        """
+        self.worker_label.setText(f"Workers: {count}")
+        self.parallel_info_widget.setVisible(True)
+
+    def update_processing_rate(self, rate: float) -> None:
+        """Update the processing rate display.
+
+        Args:
+            rate: Processing rate in documents per minute
+
+        """
+        self.rate_label.setText(f"Rate: {rate:.1f} docs/min")
+        self.parallel_info_widget.setVisible(True)
+
     def reset(self) -> None:
         """Reset all displays to initial state."""
         self.progress_bar.setValue(0)
         self.current_doc_label.setText("Ready to process")
         self.activity_log.clear()
+
+        # Hide parallel processing info
+        self.parallel_info_widget.setVisible(False)
+        self.worker_label.setText("Workers: -")
+        self.rate_label.setText("Rate: - docs/min")
 
         # Reset all statistics
         for label in self.stats_labels.values():

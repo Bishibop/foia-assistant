@@ -312,7 +312,7 @@ class FinalizeTab(QWidget):
                     processed_doc = ProcessedDocument(
                         document=document,
                         review_timestamp=datetime.now(
-                            UTC
+                            timezone.utc
                         ),  # timezone.utc for Python 3.10 compat
                         processing_time=DEFAULT_PROCESSING_TIME,  # Placeholder
                         flagged_for_review=False,
@@ -547,20 +547,22 @@ class FinalizeTab(QWidget):
         documents_to_export = selected if selected else self.processed_documents
 
         try:
-            # Create export directory next to source folder
-            export_dir = self.source_folder / "FOIA_Exports"
-
-            # Remove existing export directory if it exists
+            # Create export directory in Documents folder
+            export_base_dir = Path.home() / "Documents" / "FOIA_Exports"
+            export_base_dir.mkdir(exist_ok=True)
+            
+            # Create timestamped subdirectory and remove if exists
+            timestamp = datetime.now(timezone.utc).strftime(
+                "%Y%m%d_%H%M%S"
+            )  # timezone.utc for Python 3.10 compat
+            export_dir = export_base_dir / f"Export_{timestamp}"
+            
             if export_dir.exists():
                 shutil.rmtree(export_dir)
-
             export_dir.mkdir(exist_ok=True)
 
             # Export in selected formats
             exported_files = []
-            timestamp = datetime.now(timezone.utc).strftime(
-                "%Y%m%d_%H%M%S"
-            )  # timezone.utc for Python 3.10 compat
 
             if self.csv_checkbox.isChecked():
                 filename = self._export_csv(
@@ -749,13 +751,24 @@ class FinalizeTab(QWidget):
             return
 
         try:
-            # Create package directory next to source folder
-            package_dir = self.source_folder / "FOIA_Response"
-
-            # Remove existing package if it exists
+            # Create package directory in Documents folder
+            package_base_dir = Path.home() / "Documents" / "FOIA_Packages"
+            package_base_dir.mkdir(exist_ok=True)
+            
+            # Get request name if available
+            request_name = ""
+            if self.request_manager:
+                active_request = self.request_manager.get_active_request()
+                if active_request and active_request.name:
+                    # Sanitize request name for folder
+                    request_name = "_" + "".join(c for c in active_request.name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                    request_name = request_name.replace(' ', '_')
+            
+            # Create package directory (overwrite if exists)
+            package_dir = package_base_dir / f"FOIA_Response{request_name}"
+            
             if package_dir.exists():
                 shutil.rmtree(package_dir)
-
             package_dir.mkdir(exist_ok=True)
 
             # Create subdirectories
