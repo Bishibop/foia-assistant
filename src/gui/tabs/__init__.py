@@ -1,8 +1,8 @@
 """Tab components for the FOIA Response Assistant GUI."""
 
-from .intake_tab import IntakeTab
-from .review_tab import ReviewTab
 from .finalize_tab import FinalizeTab
+from .intake_tab import IntakeTab
 from .requests_tab import RequestsTab
+from .review_tab import ReviewTab
 
-__all__ = ['IntakeTab', 'ReviewTab', 'FinalizeTab', 'RequestsTab']
+__all__ = ["FinalizeTab", "IntakeTab", "RequestsTab", "ReviewTab"]

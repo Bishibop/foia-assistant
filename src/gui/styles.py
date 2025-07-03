@@ -1,5 +1,12 @@
 """Centralized styling for the FOIA Response Assistant GUI."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PyQt6.QtWidgets import QLabel, QPushButton
+
 # Main window styling
 MAIN_WINDOW_STYLE = """
     QMainWindow {
@@ -48,7 +55,7 @@ ACTIVITY_LOG_STYLE = """
 TITLE_LABEL_STYLE = "font-size: 24px; font-weight: bold; margin-bottom: 20px;"
 
 
-def create_title_label(text: str):
+def create_title_label(text: str) -> QLabel:
     """Create a standardized title label."""
     from PyQt6.QtWidgets import QLabel
 
@@ -84,7 +91,7 @@ def style_stat_value(bold: bool = True) -> str:
     return base
 
 
-def create_styled_button(text: str, style_constant: str):
+def create_styled_button(text: str, style_constant: str) -> QPushButton:
     """Create a button with specified style."""
     from PyQt6.QtWidgets import QPushButton
 
@@ -93,21 +100,21 @@ def create_styled_button(text: str, style_constant: str):
     return button
 
 
-def create_primary_button(text: str):
+def create_primary_button(text: str) -> QPushButton:
     """Create a primary styled button."""
     from src.constants import BUTTON_STYLE_PRIMARY
 
     return create_styled_button(text, BUTTON_STYLE_PRIMARY)
 
 
-def create_secondary_button(text: str):
+def create_secondary_button(text: str) -> QPushButton:
     """Create a secondary styled button."""
     from src.constants import BUTTON_STYLE_SECONDARY
 
     return create_styled_button(text, BUTTON_STYLE_SECONDARY)
 
 
-def create_warning_button(text: str):
+def create_warning_button(text: str) -> QPushButton:
     """Create a warning styled button (orange)."""
     from src.constants import BUTTON_STYLE_WARNING
 

@@ -9,6 +9,7 @@ WINDOW_INITIAL_POSITION = (100, 100)
 APP_STYLE = "Fusion"
 
 # Tab names
+TAB_REQUESTS = "Requests"
 TAB_INTAKE = "Intake"
 TAB_REVIEW = "Review"
 TAB_FINALIZE = "Finalize"

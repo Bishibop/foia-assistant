@@ -102,7 +102,7 @@ class DecisionPanel(QWidget):
         override_layout.addWidget(self._override_uncertain)
 
         decision_layout.addLayout(override_layout)
-        
+
         # Add spacing between buttons and feedback
         decision_layout.addSpacing(25)
 

@@ -1,5 +1,8 @@
 import logging
-from datetime import datetime, timezone  # Using timezone.utc for Python 3.10 compatibility (UTC added in 3.11)
+from datetime import (
+    datetime,
+    timezone,
+)  # Using timezone.utc for Python 3.10 compatibility (UTC added in 3.11)
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -12,7 +15,6 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -22,13 +24,13 @@ from ...constants import (
     BUTTON_STYLE_PRIMARY,
     BUTTON_STYLE_SECONDARY,
     MAIN_LAYOUT_MARGINS,
-    REQUEST_TEXT_MAX_HEIGHT,
-    REQUEST_TEXT_MIN_HEIGHT,
     SPLITTER_SIZES,
     SUPPORTED_FILE_EXTENSION,
     TIME_FORMAT,
 )
 from ...models.document import Document
+from ...processing.document_store import DocumentStore
+from ...processing.request_manager import RequestManager
 from ...processing.worker import ProcessingWorker
 from ..widgets.status_panel import StatusPanel
 
@@ -38,7 +40,7 @@ logger = logging.getLogger(__name__)
 class IntakeTab(QWidget):
     """Tab for document intake and AI processing.
 
-    Allows users to select a folder of documents and enter a FOIA request
+    Allows users to select a folder of documents and uses the active FOIA request
     to process documents against. Provides controls to start the AI processing.
     """
 
@@ -48,8 +50,14 @@ class IntakeTab(QWidget):
     folder_selected = pyqtSignal(Path)  # Emitted when a folder is selected
     processing_started = pyqtSignal()  # Emitted when processing starts
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        request_manager: RequestManager | None = None,
+        document_store: DocumentStore | None = None,
+    ) -> None:
         super().__init__()
+        self.request_manager = request_manager
+        self.document_store = document_store
         self.selected_folder: Path | None = None
         self.worker: ProcessingWorker | None = None
         self.processed_documents: list[Document] = []
@@ -60,23 +68,40 @@ class IntakeTab(QWidget):
 
         # Create splitter for configuration and status
         splitter = self._create_content_splitter()
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(splitter, 1)  # Add stretch factor to fill space
 
         self.setLayout(main_layout)
 
-        # Connect text change to enable/disable process button
-        self.request_text.textChanged.connect(self._check_ready_to_process)
+        # Update active request display
+        if self.request_manager:
+            self._update_active_request_display()
 
     def _create_main_layout(self) -> QVBoxLayout:
         """Create the main layout with title."""
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(*MAIN_LAYOUT_MARGINS)
+        main_layout.setSpacing(10)  # Add consistent spacing
+
+        # Header with title and request info
+        header_layout = QHBoxLayout()
 
         # Title
         from ..styles import create_title_label
 
         title = create_title_label("Document Processing")
-        main_layout.addWidget(title)
+        header_layout.addWidget(title)
+
+        header_layout.addStretch()
+
+        # Active request info (top-right)
+        if self.request_manager:
+            self.active_request_label = QLabel("No active request")
+            self.active_request_label.setStyleSheet(
+                "font-size: 14px; color: #0066cc; font-weight: bold;"
+            )
+            header_layout.addWidget(self.active_request_label)
+
+        main_layout.addLayout(header_layout, 0)  # No stretch for header
 
         return main_layout
 
@@ -108,9 +133,9 @@ class IntakeTab(QWidget):
         folder_group = self._create_folder_section()
         config_layout.addWidget(folder_group)
 
-        # FOIA request section
-        request_group = self._create_request_section()
-        config_layout.addWidget(request_group)
+        # Active request info section
+        request_info_group = self._create_request_info_section()
+        config_layout.addWidget(request_info_group)
 
         # Process buttons
         button_layout = self._create_button_layout()
@@ -142,26 +167,27 @@ class IntakeTab(QWidget):
 
         return folder_group
 
-    def _create_request_section(self) -> QGroupBox:
-        """Create the FOIA request input section."""
-        request_group = QGroupBox("FOIA Request")
+    def _create_request_info_section(self) -> QGroupBox:
+        """Create the active request info section."""
+        request_group = QGroupBox("Active FOIA Request")
         request_layout = QVBoxLayout()
         request_layout.setContentsMargins(10, 10, 10, 10)
         request_layout.setSpacing(5)
 
-        request_label = QLabel("Enter the FOIA request to process documents against:")
-        request_layout.addWidget(request_label)
-
-        self.request_text = QTextEdit()
-        self.request_text.setPlaceholderText(
-            "e.g., All emails and documents related to Project Blue Sky from January 2023 to December 2023"
+        # Create label for active request display
+        self.request_info_label = QLabel("No active request selected")
+        self.request_info_label.setWordWrap(True)
+        self.request_info_label.setStyleSheet(
+            "padding: 10px; background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 4px;"
         )
-        self.request_text.setMinimumHeight(REQUEST_TEXT_MIN_HEIGHT)
-        self.request_text.setMaximumHeight(REQUEST_TEXT_MAX_HEIGHT)
-        request_layout.addWidget(self.request_text)
+        request_layout.addWidget(self.request_info_label)
 
-        # Add stretch to push content up within the group box
-        request_layout.addStretch()
+        # Note about setting active request
+        note_label = QLabel(
+            "Note: Set an active request in the Requests tab before processing."
+        )
+        note_label.setStyleSheet("color: #666; font-size: 12px; font-style: italic;")
+        request_layout.addWidget(note_label)
 
         request_group.setLayout(request_layout)
         return request_group
@@ -210,10 +236,15 @@ class IntakeTab(QWidget):
             self._check_ready_to_process()
 
     def _check_ready_to_process(self) -> None:
-        # Enable process button only if both folder and request are provided
+        # Enable process button only if both folder and active request are available
         has_folder = self.selected_folder is not None
-        has_request = len(self.request_text.toPlainText().strip()) > 0
-        self.process_btn.setEnabled(has_folder and has_request)
+        has_active_request = False
+
+        if self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            has_active_request = active_request is not None
+
+        self.process_btn.setEnabled(has_folder and has_active_request)
 
     def _start_processing(self) -> None:
         """Start processing documents with LangGraph."""
@@ -232,7 +263,34 @@ class IntakeTab(QWidget):
 
     def _validate_processing_inputs(self) -> bool:
         """Validate that we have necessary inputs for processing."""
-        if not self.selected_folder or not self.request_text.toPlainText().strip():
+        # Check for selected folder
+        if not self.selected_folder:
+            return False
+
+        # Check for active request
+        if not self.request_manager:
+            QMessageBox.critical(
+                self,
+                "No Request Manager",
+                "Request manager is not available. Cannot process documents.",
+            )
+            return False
+
+        active_request = self.request_manager.get_active_request()
+        if not active_request:
+            QMessageBox.warning(
+                self,
+                "No Active Request",
+                "Please select an active request in the Requests tab before processing documents.",
+            )
+            return False
+
+        if not active_request.foia_request_text:
+            QMessageBox.critical(
+                self,
+                "Invalid Request",
+                "The active request has no FOIA text. Please update the request.",
+            )
             return False
 
         # Validate folder exists
@@ -254,14 +312,14 @@ class IntakeTab(QWidget):
         self.process_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.select_folder_btn.setEnabled(False)
-        self.request_text.setReadOnly(True)
+        # No longer need to disable request text since it's not an input field
 
     def _enable_ui_after_processing(self) -> None:
         """Re-enable UI controls after processing."""
         self.process_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
         self.select_folder_btn.setEnabled(True)
-        self.request_text.setReadOnly(False)
+        # No longer need to enable request text since it's not an input field
 
     def _prepare_for_processing(self) -> None:
         """Prepare the UI and emit signals before processing."""
@@ -279,9 +337,12 @@ class IntakeTab(QWidget):
 
     def _setup_and_start_worker(self) -> None:
         """Create, configure and start the processing worker."""
-        # Create and configure worker
+        # Get active request - we've already validated it exists
+        active_request = self.request_manager.get_active_request()
+
+        # Create and configure worker with the active request's FOIA text
         self.worker = ProcessingWorker(
-            self.selected_folder, self.request_text.toPlainText().strip()
+            self.selected_folder, active_request.foia_request_text
         )
 
         # Connect signals
@@ -328,6 +389,12 @@ class IntakeTab(QWidget):
         """
         self.processed_documents.append(document)
 
+        # Store in document store if available
+        if self.document_store and self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                self.document_store.add_document(active_request.id, document)
+
         # Log with classification
         if document.classification:
             confidence_str = (
@@ -356,6 +423,22 @@ class IntakeTab(QWidget):
         self.status_panel.add_log_entry(
             f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Processing complete!"  # timezone.utc for Python 3.10 compat
         )
+
+        # Update request statistics if available
+        if self.request_manager and self.document_store:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                # Update request with processing stats
+                stats = self.document_store.get_statistics(active_request.id)
+                self.request_manager.update_request(
+                    active_request.id,
+                    status="review",
+                    total_documents=stats["total"],
+                    processed_documents=stats["total"],
+                    responsive_count=stats["responsive"],
+                    non_responsive_count=stats["non_responsive"],
+                    uncertain_count=stats["uncertain"],
+                )
 
         # Emit documents for review
         if self.processed_documents:
@@ -394,3 +477,46 @@ class IntakeTab(QWidget):
             "Processing Error",
             f"An error occurred during processing:\n\n{error_message}",
         )
+
+    def _update_active_request_display(self) -> None:
+        """Update the active request display."""
+        if hasattr(self, "active_request_label") and self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                self.active_request_label.setText(f"Active: {active_request.name}")
+
+                # Update request info in the info section if it exists
+                if hasattr(self, "request_info_label"):
+                    request_text = active_request.foia_request_text or "No request text"
+                    # Truncate if too long
+                    if len(request_text) > 200:
+                        request_text = request_text[:197] + "..."
+                    self.request_info_label.setText(f"Request: {request_text}")
+            else:
+                self.active_request_label.setText("No active request")
+                if hasattr(self, "request_info_label"):
+                    self.request_info_label.setText("No active request selected")
+
+        # Check if we can process now
+        self._check_ready_to_process()
+
+    def refresh_request_context(self) -> None:
+        """Refresh the request context display."""
+        self._update_active_request_display()
+
+        # Cancel any ongoing processing when switching requests
+        if self.worker and self.worker.isRunning():
+            self.worker.cancel()
+            self.worker = None
+
+            # Re-enable the UI
+            self.process_btn.setEnabled(True)
+            self.cancel_btn.setEnabled(False)
+            self.select_folder_btn.setEnabled(True)
+
+        # Reset the status panel when switching requests
+        if hasattr(self, "status_panel"):
+            self.status_panel.reset()
+
+        # Clear the list of processed documents for this tab
+        self.processed_documents.clear()

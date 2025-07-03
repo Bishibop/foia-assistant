@@ -17,6 +17,8 @@ from src.gui.styles import create_secondary_button
 from src.gui.widgets.decision_panel import DecisionPanel
 from src.gui.widgets.document_viewer import DocumentViewer
 from src.models.document import Document
+from src.processing.document_store import DocumentStore
+from src.processing.request_manager import RequestManager
 
 
 class ReviewTab(QWidget):
@@ -27,8 +29,14 @@ class ReviewTab(QWidget):
     )  # Emitted when a document review is completed
     all_documents_reviewed = pyqtSignal()  # Emitted when queue is empty
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        request_manager: RequestManager | None = None,
+        document_store: DocumentStore | None = None,
+    ) -> None:
         super().__init__()
+        self.request_manager = request_manager
+        self.document_store = document_store
         self._document_queue: list[Document] = []
         self._current_document: Document | None = None
         self._current_index = 0
@@ -63,7 +71,7 @@ class ReviewTab(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def _create_header_section(self) -> QHBoxLayout:
-        """Create the header with title and queue status."""
+        """Create the header with title and active request."""
         header_layout = QHBoxLayout()
 
         from ..styles import create_title_label
@@ -73,9 +81,14 @@ class ReviewTab(QWidget):
 
         header_layout.addStretch()
 
-        self._queue_status = QLabel("Queue: 0 documents")
-        self._queue_status.setStyleSheet("font-size: 14px; color: #666;")
-        header_layout.addWidget(self._queue_status)
+        # Active request label (top-right)
+        if self.request_manager:
+            self._active_request_label = QLabel("No active request")
+            self._active_request_label.setStyleSheet(
+                "font-size: 14px; color: #0066cc; font-weight: bold;"
+            )
+            header_layout.addWidget(self._active_request_label)
+            self._update_active_request_display()
 
         return header_layout
 
@@ -137,10 +150,20 @@ class ReviewTab(QWidget):
 
     def add_documents(self, documents: list[Document]) -> None:
         """Add documents to the review queue."""
-        # Only add documents that haven't been reviewed
-        for doc in documents:
-            if doc.human_decision is None and doc not in self._document_queue:
-                self._document_queue.append(doc)
+        # If we have a document store and request manager, load from active request
+        if self.document_store and self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                # Load unreviewed documents from the document store for this request
+                self._document_queue = self.document_store.get_unreviewed_documents(
+                    active_request.id
+                )
+        else:
+            # Fall back to the provided documents
+            # Only add documents that haven't been reviewed
+            for doc in documents:
+                if doc.human_decision is None and doc not in self._document_queue:
+                    self._document_queue.append(doc)
 
         self._update_queue_display()
 
@@ -189,10 +212,8 @@ class ReviewTab(QWidget):
 
     def _update_queue_display(self) -> None:
         """Update queue status display."""
-        count = len(self._document_queue)
-        self._queue_status.setText(
-            f"Queue: {count} document{'s' if count != 1 else ''}"
-        )
+        # Queue count is now shown in the navigation counter
+        pass
 
     def _on_decision_made(self, decision: str, feedback: str) -> None:
         """Handle decision from decision panel."""
@@ -208,6 +229,17 @@ class ReviewTab(QWidget):
             self._current_document.human_decision = decision
 
         self._current_document.human_feedback = feedback if feedback else None
+
+        # Update in document store if available
+        if self.document_store and self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                self.document_store.update_document(
+                    active_request.id,
+                    self._current_document.filename,
+                    human_decision=self._current_document.human_decision,
+                    human_feedback=self._current_document.human_feedback,
+                )
 
         # Emit signal
         self.review_completed.emit(self._current_document)
@@ -305,3 +337,27 @@ class ReviewTab(QWidget):
                 doc_viewer_width = int(total_width * 0.4)
                 decision_panel_width = int(total_width * 0.6)
                 self._splitter.setSizes([doc_viewer_width, decision_panel_width])
+
+    def _update_active_request_display(self) -> None:
+        """Update the active request display."""
+        if hasattr(self, "_active_request_label") and self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                self._active_request_label.setText(f"Request: {active_request.name}")
+            else:
+                self._active_request_label.setText("No active request")
+
+    def refresh_request_context(self) -> None:
+        """Refresh the review queue for the active request."""
+        self._update_active_request_display()
+        # Reload documents from document store for active request
+        if self.document_store and self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                self._document_queue = self.document_store.get_unreviewed_documents(
+                    active_request.id
+                )
+                self._update_queue_display()
+                # Display first document if available
+                if self._document_queue and not self._current_document:
+                    self._display_document(0)

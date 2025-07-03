@@ -5,7 +5,10 @@ import json
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone  # Using timezone.utc for Python 3.10 compatibility (UTC added in 3.11)
+from datetime import (
+    datetime,
+    timezone,
+)  # Using timezone.utc for Python 3.10 compatibility (UTC added in 3.11)
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -46,6 +49,8 @@ from src.gui.styles import (
 )
 from src.gui.widgets.document_viewer import DocumentViewer
 from src.models.document import Document
+from src.processing.document_store import DocumentStore
+from src.processing.request_manager import RequestManager
 from src.utils.statistics import calculate_document_statistics
 
 
@@ -66,13 +71,18 @@ class FinalizeTab(QWidget):
     export_requested = pyqtSignal(list)  # List of documents to export
     package_requested = pyqtSignal(list)  # List of documents for FOIA package
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        request_manager: RequestManager | None = None,
+        document_store: DocumentStore | None = None,
+    ) -> None:
         """Initialize the processed tab."""
         super().__init__()
+        self.request_manager = request_manager
+        self.document_store = document_store
         self.processed_documents: list[ProcessedDocument] = []
         self.filtered_documents: list[ProcessedDocument] = []
         self.source_folder: Path | None = None
-        self.all_documents_reviewed = False
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -81,9 +91,25 @@ class FinalizeTab(QWidget):
         layout.setContentsMargins(*MAIN_LAYOUT_MARGINS)
         layout.setSpacing(10)
 
+        # Header with title and request info
+        header_layout = QHBoxLayout()
+
         # Title
         title = create_title_label("Finalize Package")
-        layout.addWidget(title)
+        header_layout.addWidget(title)
+
+        header_layout.addStretch()
+
+        # Active request info (top-right)
+        if self.request_manager:
+            self._active_request_label = QLabel("No active request")
+            self._active_request_label.setStyleSheet(
+                "font-size: 14px; color: #0066cc; font-weight: bold;"
+            )
+            header_layout.addWidget(self._active_request_label)
+            self._update_active_request_display()
+
+        layout.addLayout(header_layout)
 
         # Toolbar
         toolbar_layout = self._create_toolbar()
@@ -126,7 +152,7 @@ class FinalizeTab(QWidget):
         layout.addWidget(self.splitter, 1)  # Stretch factor of 1
         self.setLayout(layout)
 
-        # Initially disable buttons
+        # Initially disable buttons (enabled when documents are added)
         self.update_button_states()
 
     def _create_toolbar(self) -> QHBoxLayout:
@@ -253,7 +279,7 @@ class FinalizeTab(QWidget):
         decision_layout.addWidget(self.human_decision_label)
         decision_layout.addWidget(self.confidence_label)
         decision_layout.addWidget(self.feedback_label)
-        
+
         # Add spacing before flag button
         decision_layout.addSpacing(15)
 
@@ -272,18 +298,41 @@ class FinalizeTab(QWidget):
 
     def add_processed_document(self, document: Document) -> None:
         """Add a newly processed document from the review tab."""
-        # For now, use a dummy processing time
-        # In a real implementation, this would be tracked during processing
-        processed_doc = ProcessedDocument(
-            document=document,
-            review_timestamp=datetime.now(timezone.utc),  # timezone.utc for Python 3.10 compat
-            processing_time=DEFAULT_PROCESSING_TIME,  # Placeholder
-            flagged_for_review=False,
-        )
-        self.processed_documents.append(processed_doc)
-        self.apply_filters()
-        self.update_statistics()
-        self.update_button_states()
+        # Only add if it belongs to the active request
+        if self.request_manager and self.document_store:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                # Check if document belongs to active request
+                stored_doc = self.document_store.get_document(
+                    active_request.id, document.filename
+                )
+                if stored_doc:
+                    # For now, use a dummy processing time
+                    # In a real implementation, this would be tracked during processing
+                    processed_doc = ProcessedDocument(
+                        document=document,
+                        review_timestamp=datetime.now(
+                            UTC
+                        ),  # timezone.utc for Python 3.10 compat
+                        processing_time=DEFAULT_PROCESSING_TIME,  # Placeholder
+                        flagged_for_review=False,
+                    )
+                    self.processed_documents.append(processed_doc)
+                    self.apply_filters()
+                    self.update_statistics()
+                    self.update_button_states()
+        else:
+            # Fallback for when managers aren't available
+            processed_doc = ProcessedDocument(
+                document=document,
+                review_timestamp=datetime.now(timezone.utc),
+                processing_time=DEFAULT_PROCESSING_TIME,
+                flagged_for_review=False,
+            )
+            self.processed_documents.append(processed_doc)
+            self.apply_filters()
+            self.update_statistics()
+            self.update_button_states()
 
     def apply_filters(self) -> None:
         """Apply current filters to the document list."""
@@ -325,10 +374,15 @@ class FinalizeTab(QWidget):
         for row, proc_doc in enumerate(self.filtered_documents):
             doc = proc_doc.document
 
-            # Checkbox
+            # Checkbox with padding
+            checkbox_widget = QWidget()
+            checkbox_layout = QHBoxLayout(checkbox_widget)
+            checkbox_layout.setContentsMargins(8, 0, 0, 0)  # Add 8px left padding
             checkbox = QCheckBox()
             checkbox.stateChanged.connect(self.update_export_button)
-            self.document_table.setCellWidget(row, 0, checkbox)
+            checkbox_layout.addWidget(checkbox)
+            checkbox_layout.addStretch()
+            self.document_table.setCellWidget(row, 0, checkbox_widget)
 
             # Filename
             self.document_table.setItem(row, 1, QTableWidgetItem(doc.filename))
@@ -406,9 +460,11 @@ class FinalizeTab(QWidget):
         """Update export button text based on selection."""
         selected_count = 0
         for row in range(self.document_table.rowCount()):
-            checkbox = self.document_table.cellWidget(row, 0)
-            if isinstance(checkbox, QCheckBox) and checkbox.isChecked():
-                selected_count += 1
+            widget = self.document_table.cellWidget(row, 0)
+            if widget:
+                checkbox = widget.findChild(QCheckBox)
+                if checkbox and checkbox.isChecked():
+                    selected_count += 1
 
         if selected_count > 0:
             self.export_button.setText(f"Export Selection ({selected_count})")
@@ -417,19 +473,21 @@ class FinalizeTab(QWidget):
 
     def update_button_states(self) -> None:
         """Update the enabled state of export and FOIA package buttons."""
-        has_documents = len(self.processed_documents) > 0
-        enabled = has_documents and self.all_documents_reviewed
+        # Enable buttons if at least one document has been reviewed
+        has_reviewed_documents = len(self.processed_documents) > 0
 
-        self.export_button.setEnabled(enabled)
-        self.generate_package_button.setEnabled(enabled)
+        self.export_button.setEnabled(has_reviewed_documents)
+        self.generate_package_button.setEnabled(has_reviewed_documents)
 
     def get_selected_documents(self) -> list[ProcessedDocument]:
         """Get list of selected documents."""
         selected = []
         for row in range(self.document_table.rowCount()):
-            checkbox = self.document_table.cellWidget(row, 0)
-            if isinstance(checkbox, QCheckBox) and checkbox.isChecked():
-                selected.append(self.filtered_documents[row])
+            widget = self.document_table.cellWidget(row, 0)
+            if widget:
+                checkbox = widget.findChild(QCheckBox)
+                if checkbox and checkbox.isChecked():
+                    selected.append(self.filtered_documents[row])
         return selected
 
     def set_source_folder(self, folder: Path) -> None:
@@ -437,8 +495,11 @@ class FinalizeTab(QWidget):
         self.source_folder = folder
 
     def set_all_documents_reviewed(self, reviewed: bool) -> None:
-        """Set whether all documents have been reviewed."""
-        self.all_documents_reviewed = reviewed
+        """Called when all documents have been reviewed (for compatibility).
+
+        Note: Buttons are now enabled when at least one document is reviewed,
+        not when all documents are reviewed.
+        """
         self.update_button_states()
 
     def clear_all(self) -> None:
@@ -453,7 +514,6 @@ class FinalizeTab(QWidget):
         self.feedback_label.setText("Feedback: -")
         self.flag_button.setEnabled(False)  # Disable when clearing
         self.flag_button.setText("Flag for Review")  # Reset text
-        self.all_documents_reviewed = False
         self.update_statistics()
         self.update_export_button()
         self.update_button_states()
@@ -498,7 +558,9 @@ class FinalizeTab(QWidget):
 
             # Export in selected formats
             exported_files = []
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")  # timezone.utc for Python 3.10 compat
+            timestamp = datetime.now(timezone.utc).strftime(
+                "%Y%m%d_%H%M%S"
+            )  # timezone.utc for Python 3.10 compat
 
             if self.csv_checkbox.isChecked():
                 filename = self._export_csv(
@@ -809,7 +871,9 @@ class FinalizeTab(QWidget):
 
         with open(cover_letter_path, "w", encoding="utf-8") as f:
             f.write("[AGENCY LETTERHEAD]\n\n")
-            f.write(f"Date: {datetime.now(timezone.utc).strftime('%B %d, %Y')}\n\n")  # timezone.utc for Python 3.10 compat
+            f.write(
+                f"Date: {datetime.now(timezone.utc).strftime('%B %d, %Y')}\n\n"
+            )  # timezone.utc for Python 3.10 compat
             f.write("[Requester Name]\n")
             f.write("[Requester Address]\n\n")
             f.write("Re: Freedom of Information Act Request\n\n")
@@ -842,3 +906,43 @@ class FinalizeTab(QWidget):
             f.write("[Name]\n")
             f.write("[Title]\n")
             f.write("[Agency]\n")
+
+    def _update_active_request_display(self) -> None:
+        """Update the active request display."""
+        if hasattr(self, "_active_request_label") and self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                self._active_request_label.setText(f"Request: {active_request.name}")
+            else:
+                self._active_request_label.setText("No active request")
+
+    def refresh_request_context(self) -> None:
+        """Refresh documents for the active request."""
+        self._update_active_request_display()
+
+        # Clear current documents
+        self.processed_documents.clear()
+
+        # Load reviewed documents from document store for active request
+        if self.document_store and self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                # Get all reviewed documents
+                reviewed_docs = self.document_store.get_reviewed_documents(
+                    active_request.id
+                )
+
+                # Convert to ProcessedDocument objects
+                for doc in reviewed_docs:
+                    processed_doc = ProcessedDocument(
+                        document=doc,
+                        review_timestamp=datetime.now(timezone.utc),
+                        processing_time=DEFAULT_PROCESSING_TIME,
+                        flagged_for_review=False,
+                    )
+                    self.processed_documents.append(processed_doc)
+
+        # Update display
+        self.apply_filters()
+        self.update_statistics()
+        self.update_button_states()

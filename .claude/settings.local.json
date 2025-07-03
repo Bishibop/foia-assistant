@@ -18,7 +18,8 @@
       "Bash(pip install:*)",
       "Bash(rm:*)",
       "Bash(echo:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }

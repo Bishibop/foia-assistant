@@ -22,16 +22,24 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      PyQt6 GUI Layer                        │
-│  ┌──────────────┬─────────────┬──────────────────────────┐  │
-│  │ Intake Tab   │ Review Tab  │ Finalize Tab             │  │
-│  │              │             │                          │  │
-│  └──────┬───────┴─────────────┴──────────────────────────┘  │
+│  ┌──────────────┬────────────┬────────────┬──────────────┐  │
+│  │ Requests Tab │ Intake Tab │ Review Tab │ Finalize Tab │  │
+│  │              │            │            │              │  │
+│  └──────┬───────┴────────────┴────────────┴──────────────┘  │
 │         │                                                    │
 │  ┌──────▼────────────────────────────────────────────────┐  │
 │  │            Status Panel (Real-time Updates)           │  │
 │  └──────┬────────────────────────────────────────────────┘  │
 └─────────┼───────────────────────────────────────────────────┘
           │ Qt Signals
+┌─────────▼───────────────────────────────────────────────────┐
+│               Request Management Layer                       │
+│  ┌─────────────────────┬─────────────────────────────────┐  │
+│  │  Request Manager    │  Document Store                 │  │
+│  │  (CRUD Operations)  │  (Request-scoped Documents)     │  │
+│  └─────────────────────┴─────────────────────────────────┘  │
+└─────────┬───────────────────────────────────────────────────┘
+          │
 ┌─────────▼───────────────────────────────────────────────────┐
 │               Processing Worker (QThread)                    │
 │         Manages background document processing               │
@@ -83,10 +91,12 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
 
 ### Data Storage
 - **In-Memory Only** - No persistence in current implementation
-  - Document list maintained in IntakeTab
-  - Statistics tracked in ProcessingWorker
-  - Review queue maintained in ReviewTab
-  - Processed documents stored in FinalizeTab
+  - Multiple FOIA requests managed by RequestManager
+  - Documents isolated by request in DocumentStore
+  - Document list maintained per request
+  - Statistics tracked per request
+  - Review queue scoped to active request
+  - Processed documents stored per request
   - No SQLite implementation yet
 - **JSON** - Format for OpenAI API responses and data passing
 - **CSV** - Export format for document metadata and exemption logs
@@ -109,19 +119,24 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
   - `processing_started()` - Clear all tabs when reprocessing
   - `review_completed(Document)` - Document decision made
   - `all_documents_reviewed()` - Enable finalize actions
+  - `request_switched()` - Active request changed in RequestManager
+  - `request_created(FOIARequest)` - New request created
+  - `request_updated(FOIARequest)` - Request details modified
+  - `request_deleted(str)` - Request removed from system
 
 ### Processing Pipeline
-1. User selects folder and enters FOIA request in Intake tab
-2. ProcessingWorker thread spawned with document list
-3. Documents processed sequentially through LangGraph
-4. Each document result emitted via Qt signal
-5. GUI updates in real-time with progress and results
-6. Statistics accumulated and displayed
-7. On completion, documents sent to Review tab queue
-8. User reviews each document with AI recommendations
-9. Human decisions captured and stored in Document objects
-10. Reviewed documents sent to Finalize tab
-11. User can export documents or generate FOIA response package
+1. User creates or selects FOIA request in Requests tab
+2. User selects folder for document processing in Intake tab
+3. ProcessingWorker thread spawned with document list and active request ID
+4. Documents processed sequentially through LangGraph
+5. Each document result emitted via Qt signal and stored by request
+6. GUI updates in real-time with progress and results
+7. Statistics accumulated per request and displayed
+8. On completion, documents stored in DocumentStore for the request
+9. User reviews documents in Review tab (filtered by active request)
+10. Human decisions captured and stored in Document objects
+11. Reviewed documents available in Finalize tab (filtered by active request)
+12. User can export documents or generate FOIA response package per request
 
 ### Error Handling Strategy
 - Graceful degradation on errors
@@ -134,6 +149,29 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
 ### Core Data Structures
 
 ```python
+@dataclass
+class FOIARequest:
+    """Represents a single FOIA request being processed"""
+    id: str = field(default_factory=lambda: str(uuid4()))
+    name: str = ""
+    description: str = ""
+    foia_request_text: str = ""
+    created_at: datetime = field(default_factory=datetime.now)
+    deadline: datetime | None = None
+    status: str = "draft"  # draft, processing, review, complete
+    
+    # Statistics
+    total_documents: int = 0
+    processed_documents: int = 0
+    responsive_count: int = 0
+    non_responsive_count: int = 0
+    uncertain_count: int = 0
+    
+    # Document associations (in-memory only)
+    document_folder: Path | None = None
+    processed_document_ids: set[str] = field(default_factory=set)
+    reviewed_document_ids: set[str] = field(default_factory=set)
+
 @dataclass
 class Document:
     filename: str
@@ -172,9 +210,12 @@ class DocumentState(TypedDict):
 ```
 
 ### State Management
-- Document state flows through LangGraph nodes
+- **Request Management**: RequestManager handles CRUD operations and active request
+- **Document Isolation**: DocumentStore maintains request-scoped document collections
+- **Document Processing**: Document state flows through LangGraph nodes
 - Each node can read and modify state
 - Final state converted to Document dataclass
+- Documents associated with active request via DocumentStore
 - No persistent storage between sessions
 
 ## LangGraph Workflow Design
@@ -229,27 +270,37 @@ workflow.add_edge("detect_exemptions", END)
 ## User Interface Design
 
 ### Tabbed Interface Structure
+- **Requests Tab** (New)
+  - Request list table with name, deadline, status, progress
+  - Active request indicator with radio button
+  - Details panel for viewing/editing request
+  - Create/Delete request functionality
+  - Active request display in header
+  - Auto-creates 5 default requests on startup
 - **Intake Tab**
   - Folder selection browser
-  - FOIA request text input
+  - Active request display (top-right)
   - Real-time status panel
   - Process button and controls
   - 40/60 split layout (configuration/status)
+  - Validates active request has FOIA text
 - **Review Tab**
   - Document viewer with PII highlighting
   - AI classification display with confidence
   - Decision controls (Approve/Override)
   - Keyboard shortcuts (Space, R, N, U)
-  - Review queue navigation
+  - Review queue filtered by active request
+  - Active request display (top-right)
   - 40/60 split layout (document/decision)
   - Previous/Next navigation buttons
 - **Finalize Tab**
-  - Document table with search and filtering
-  - Statistics bar showing totals and agreement rate
+  - Document table filtered by active request
+  - Statistics bar showing request-specific totals
   - Document viewer with decision information
   - Export options (CSV, JSON, Excel*, PDF*)
   - Generate FOIA Package functionality
   - Flag for review capability
+  - Active request display (top-right)
   - 60/40 split layout (document list/viewer)
 
 ### Status Panel Components
@@ -322,6 +373,7 @@ src/
 │   ├── main_window.py    # Main application window
 │   ├── styles.py         # Centralized styling & UI helpers
 │   ├── tabs/
+│   │   ├── requests_tab.py  # Request management interface (new)
 │   │   ├── intake_tab.py    # Document intake and processing
 │   │   ├── review_tab.py    # Document review interface
 │   │   └── finalize_tab.py  # Export and package generation
@@ -337,9 +389,12 @@ src/
 │       ├── document_loader.py
 │       └── exemption_detector.py
 ├── models/
+│   ├── request.py        # FOIARequest dataclass (new)
 │   ├── document.py       # Document dataclass
 │   └── classification.py # Classification enum
 ├── processing/
+│   ├── request_manager.py # Request CRUD operations (new)
+│   ├── document_store.py  # Request-scoped documents (new)
 │   └── worker.py         # Background processing thread
 └── utils/
     ├── error_handling.py # Standardized error responses
@@ -380,7 +435,7 @@ pre-commit >= 3.5.0
 
 ## Current System Constraints
 - **No configuration files** - Hardcoded settings except API key
-- **No persistence** - Fresh start each session
+- **No persistence** - Fresh start each session (all requests lost on exit)
 - **No automated testing** - Manual testing only
 - **Plain text only** - No PDF/OCR support
 - **Single user** - No multi-user features
@@ -388,27 +443,39 @@ pre-commit >= 3.5.0
 - **Flat directories** - No recursive folder processing
 - **Basic error handling** - Fail gracefully, no recovery
 - **Limited export formats** - CSV and JSON only (Excel/PDF placeholders)
+- **Request isolation** - Documents cannot be shared between requests
 
 ## Key Features
+
+### Multi-Request Management (New)
+- Create and manage multiple FOIA requests simultaneously
+- Switch between requests with single click
+- Track progress and statistics per request
+- Maintain document isolation between requests
+- Edit request details (name, description, FOIA text, deadline)
+- Visual progress indicators per request
 
 ### Document Processing
 - Batch processing of text documents
 - AI-powered classification with confidence scores
 - Automatic PII detection and exemption marking
 - Real-time progress tracking
+- Request-scoped document storage
 
 ### Review Workflow
 - Sequential document review with AI recommendations
 - Override capabilities with feedback capture
 - Keyboard shortcuts for efficiency
 - Visual highlighting of detected PII
+- Review queue filtered by active request
 
 ### Export and Package Generation
 - Multiple export formats (CSV, JSON)
-- FOIA response package generation
+- FOIA response package generation per request
 - Exemption log creation
 - Processing summary reports
 - Cover letter templates
+- Export scoped to active request
 
 ### User Experience
 - Drag-and-drop folder selection
@@ -416,3 +483,4 @@ pre-commit >= 3.5.0
 - Search and filter capabilities
 - Responsive split-pane layouts
 - Platform-specific file manager integration
+- Consistent request context display across tabs

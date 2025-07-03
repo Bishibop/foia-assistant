@@ -5,14 +5,18 @@ from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget
 from ..constants import (
     TAB_FINALIZE,
     TAB_INTAKE,
+    TAB_REQUESTS,
     TAB_REVIEW,
     WINDOW_INITIAL_POSITION,
     WINDOW_INITIAL_SIZE,
     WINDOW_TITLE,
 )
+from ..processing.document_store import DocumentStore
+from ..processing.request_manager import RequestManager
 from .styles import MAIN_WINDOW_STYLE
 from .tabs.finalize_tab import FinalizeTab
 from .tabs.intake_tab import IntakeTab
+from .tabs.requests_tab import RequestsTab
 from .tabs.review_tab import ReviewTab
 
 
@@ -33,6 +37,10 @@ class MainWindow(QMainWindow):
             WINDOW_INITIAL_SIZE[1],
         )
 
+        # Initialize managers
+        self.request_manager = RequestManager()
+        self.document_store = DocumentStore()
+
         # Store source folder path
         self.source_folder = None
 
@@ -45,12 +53,14 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
 
-        # Create tabs
-        self.intake_tab = IntakeTab()
-        self.review_tab = ReviewTab()
-        self.finalize_tab = FinalizeTab()
+        # Create tabs with manager references
+        self.requests_tab = RequestsTab(self.request_manager)
+        self.intake_tab = IntakeTab(self.request_manager, self.document_store)
+        self.review_tab = ReviewTab(self.request_manager, self.document_store)
+        self.finalize_tab = FinalizeTab(self.request_manager, self.document_store)
 
-        # Add tabs to widget
+        # Add tabs to widget (Requests tab first)
+        self.tab_widget.addTab(self.requests_tab, TAB_REQUESTS)
         self.tab_widget.addTab(self.intake_tab, TAB_INTAKE)
         self.tab_widget.addTab(self.review_tab, TAB_REVIEW)
         self.tab_widget.addTab(self.finalize_tab, TAB_FINALIZE)
@@ -61,8 +71,74 @@ class MainWindow(QMainWindow):
         # Apply styling
         self._apply_styling()
 
+        # Create default requests if none exist
+        if self.request_manager.get_request_count() == 0:
+            # Create multiple default requests
+            default_requests = [
+                {
+                    "name": "F-2024-00123",
+                    "description": "Blue Sky Project",
+                    "foia_text": "All emails, documents, and communications related to the Blue Sky Project between January 2023 and September 2024.",
+                    "deadline": "2025-07-04",
+                },
+                {
+                    "name": "F-2024-00124",
+                    "description": "Climate Research Grants",
+                    "foia_text": "All grant applications, funding decisions, and correspondence related to climate change research funding awarded by the agency between October 2022 and December 2024.",
+                },
+                {
+                    "name": "F-2024-00125",
+                    "description": "Public Health Initiative",
+                    "foia_text": "All records, reports, and communications regarding the Public Health Preparedness Initiative, including budget allocations and program evaluations from January 2023 to present.",
+                },
+                {
+                    "name": "F-2024-00126",
+                    "description": "Infrastructure Assessment",
+                    "foia_text": "All engineering reports, safety assessments, and maintenance records for bridges and tunnels in Region 5, covering the period from July 2023 to October 2024.",
+                },
+                {
+                    "name": "F-2024-00127",
+                    "description": "Environmental Impact Study",
+                    "foia_text": "All environmental impact assessments, public comments, and agency responses related to the proposed Riverside Development Project, from initial proposal in March 2023 through current date.",
+                },
+            ]
+
+            # Create each request
+            for req_data in default_requests:
+                request = self.request_manager.create_request(
+                    req_data["name"], req_data["description"]
+                )
+                # Build update kwargs
+                update_kwargs = {"foia_request_text": req_data["foia_text"]}
+
+                # Add deadline if specified
+                if "deadline" in req_data:
+                    from datetime import datetime, timezone
+
+                    deadline = datetime.strptime(req_data["deadline"], "%Y-%m-%d")
+                    deadline = deadline.replace(tzinfo=timezone.utc)
+                    update_kwargs["deadline"] = deadline
+
+                self.request_manager.update_request(request.id, **update_kwargs)
+
+            # Clear active request so none are automatically selected
+            self.request_manager._active_request_id = None
+            self._update_window_title()
+            # Refresh requests tab to show all default requests
+            self.requests_tab._refresh_table()
+
+        # Initial refresh of all tabs
+        self.intake_tab.refresh_request_context()
+        self.review_tab.refresh_request_context()
+        self.finalize_tab.refresh_request_context()
+
     def _connect_signals(self) -> None:
         """Connect signals between tabs."""
+        # Connect request tab signals
+        self.requests_tab.request_created.connect(self._on_request_created)
+        self.requests_tab.request_selected.connect(self._on_request_selected)
+        self.requests_tab.request_deleted.connect(self._on_request_deleted)
+
         # When folder is selected, store it
         self.intake_tab.folder_selected.connect(self._on_folder_selected)
 
@@ -99,3 +175,31 @@ class MainWindow(QMainWindow):
 
     def _apply_styling(self) -> None:
         self.setStyleSheet(MAIN_WINDOW_STYLE)
+
+    def _on_request_created(self, request_id: str) -> None:
+        """Handle new request creation."""
+        self._update_window_title()
+
+    def _on_request_selected(self, request_id: str) -> None:
+        """Handle request selection."""
+        self._update_window_title()
+        # Clear review queue when switching requests
+        self.review_tab.clear_all()
+        # Refresh tabs to show new active request
+        self.intake_tab.refresh_request_context()
+        self.review_tab.refresh_request_context()
+        self.finalize_tab.refresh_request_context()
+
+    def _on_request_deleted(self, request_id: str) -> None:
+        """Handle request deletion."""
+        # Clear associated documents from document store
+        self.document_store.clear_request(request_id)
+        self._update_window_title()
+
+    def _update_window_title(self) -> None:
+        """Update window title with active request name."""
+        active_request = self.request_manager.get_active_request()
+        if active_request:
+            self.setWindowTitle(f"{WINDOW_TITLE} - {active_request.name}")
+        else:
+            self.setWindowTitle(WINDOW_TITLE)
