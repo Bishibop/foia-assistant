@@ -58,12 +58,14 @@ class IntakeTab(QWidget):
         document_store: DocumentStore | None = None,
         feedback_manager: FeedbackManager | None = None,
         embedding_store: EmbeddingStore | None = None,
+        audit_manager: "AuditManager | None" = None,
     ) -> None:
         super().__init__()
         self.request_manager = request_manager
         self.document_store = document_store
         self.feedback_manager = feedback_manager
         self.embedding_store = embedding_store
+        self.audit_manager = audit_manager
         self.selected_folder: Path | None = None
         self.worker: ProcessingWorker | None = None
         self.processed_documents: list[Document] = []
@@ -353,7 +355,8 @@ class IntakeTab(QWidget):
             active_request.foia_request_text,
             request_id=active_request.id,
             feedback_manager=self.feedback_manager,
-            embedding_store=self.embedding_store
+            embedding_store=self.embedding_store,
+            audit_manager=self.audit_manager
         )
 
         # Connect signals
@@ -612,6 +615,7 @@ class IntakeTab(QWidget):
                 request_id=active_request.id,
                 feedback_manager=self.feedback_manager,
                 embedding_store=self.embedding_store,
+                audit_manager=self.audit_manager,
                 file_list=txt_files_to_process  # Pass the filtered file list
             )
 

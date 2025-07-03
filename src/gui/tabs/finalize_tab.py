@@ -75,11 +75,13 @@ class FinalizeTab(QWidget):
         self,
         request_manager: RequestManager | None = None,
         document_store: DocumentStore | None = None,
+        audit_manager: "AuditManager | None" = None,
     ) -> None:
         """Initialize the processed tab."""
         super().__init__()
         self.request_manager = request_manager
         self.document_store = document_store
+        self.audit_manager = audit_manager
         self.processed_documents: list[ProcessedDocument] = []
         self.filtered_documents: list[ProcessedDocument] = []
         self.source_folder: Path | None = None
@@ -505,6 +507,16 @@ class FinalizeTab(QWidget):
         doc = proc_doc.document
         self.document_viewer.display_document(doc.filename, doc.content, doc.exemptions)
 
+        # Log document view to audit trail
+        if self.audit_manager and self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                self.audit_manager.log_view(
+                    filename=doc.filename,
+                    tab_name="Finalize",
+                    request_id=active_request.id
+                )
+
         # Update decision info
         self.ai_decision_label.setText(
             f"AI Classification: {doc.classification or '-'}"
@@ -655,7 +667,7 @@ class FinalizeTab(QWidget):
             export_base_dir.mkdir(exist_ok=True)
 
             # Create timestamped subdirectory and remove if exists
-            timestamp = datetime.now(UTC).strftime(
+            timestamp = datetime.now(timezone.utc).strftime(
                 "%Y%m%d_%H%M%S"
             )  # timezone.utc for Python 3.10 compat
             export_dir = export_base_dir / f"Export_{timestamp}"
@@ -695,6 +707,27 @@ class FinalizeTab(QWidget):
                 if filename:
                     exported_files.append(Path(filename).name)
 
+            # Log export to audit trail
+            if exported_files and self.audit_manager and self.request_manager:
+                active_request = self.request_manager.get_active_request()
+                if active_request:
+                    formats = []
+                    if self.csv_checkbox.isChecked():
+                        formats.append("CSV")
+                    if self.json_checkbox.isChecked():
+                        formats.append("JSON")
+                    if self.excel_checkbox.isChecked():
+                        formats.append("Excel")
+                    if self.pdf_checkbox.isChecked():
+                        formats.append("PDF")
+                    
+                    format_str = ", ".join(formats)
+                    self.audit_manager.log_export(
+                        format=format_str,
+                        document_count=len(documents_to_export),
+                        request_id=active_request.id
+                    )
+
             # Show success message with option to open folder
             if exported_files:
                 msg_box = QMessageBox(self)
@@ -709,7 +742,8 @@ class FinalizeTab(QWidget):
                 )
                 msg_box.setDefaultButton(QMessageBox.StandardButton.Open)
 
-                if msg_box.exec() == QMessageBox.StandardButton.Open:
+                result = msg_box.exec()
+                if result == QMessageBox.StandardButton.Open:
                     # Open the folder in the system file manager
                     import platform
                     import subprocess
@@ -920,7 +954,7 @@ class FinalizeTab(QWidget):
                 ["AI/Human Agreement", f"{(agreements/total_docs*100):.1f}%" if total_docs > 0 else "0%"],
                 ["Documents Flagged", flagged],
                 ["", ""],
-                ["Export Date", datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")]
+                ["Export Date", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")]
             ]
 
             for row_idx, (label, value) in enumerate(summary_data, 1):
@@ -1006,7 +1040,7 @@ class FinalizeTab(QWidget):
             )
             elements.append(
                 Paragraph(
-                    f"Generated: {datetime.now(UTC).strftime('%B %d, %Y at %H:%M:%S UTC')}",
+                    f"Generated: {datetime.now(timezone.utc).strftime('%B %d, %Y at %H:%M:%S UTC')}",
                     date_style
                 )
             )
@@ -1229,6 +1263,16 @@ class FinalizeTab(QWidget):
             # Generate cover letter template
             self._generate_cover_letter(package_dir, len(responsive_docs))
 
+            # Log FOIA package generation to audit trail
+            if self.audit_manager and self.request_manager:
+                active_request = self.request_manager.get_active_request()
+                if active_request:
+                    self.audit_manager.log_export(
+                        format="FOIA Package",
+                        document_count=len(responsive_docs),
+                        request_id=active_request.id
+                    )
+
             # Show success with option to open folder
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("Package Generated")
@@ -1242,7 +1286,8 @@ class FinalizeTab(QWidget):
             )
             msg_box.setDefaultButton(QMessageBox.StandardButton.Open)
 
-            if msg_box.exec() == QMessageBox.StandardButton.Open:
+            result = msg_box.exec()
+            if result == QMessageBox.StandardButton.Open:
                 # Open the folder in the system file manager
                 import platform
                 import subprocess
@@ -1301,7 +1346,7 @@ class FinalizeTab(QWidget):
             f.write("FOIA PROCESSING SUMMARY REPORT\n")
             f.write("=" * 50 + "\n\n")
             f.write(
-                f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')}\n\n"  # timezone.utc for Python 3.10 compat
+                f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}\n\n"  # timezone.utc for Python 3.10 compat
             )
             f.write("DOCUMENT STATISTICS:\n")
             f.write(f"Total Documents Processed: {stats.total}\n")
@@ -1324,7 +1369,7 @@ class FinalizeTab(QWidget):
         with open(cover_letter_path, "w", encoding="utf-8") as f:
             f.write("[AGENCY LETTERHEAD]\n\n")
             f.write(
-                f"Date: {datetime.now(UTC).strftime('%B %d, %Y')}\n\n"
+                f"Date: {datetime.now(timezone.utc).strftime('%B %d, %Y')}\n\n"
             )  # timezone.utc for Python 3.10 compat
             f.write("[Requester Name]\n")
             f.write("[Requester Address]\n\n")

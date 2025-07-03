@@ -40,11 +40,13 @@ class ReviewTab(QWidget):
         request_manager: RequestManager | None = None,
         document_store: DocumentStore | None = None,
         feedback_manager: FeedbackManager | None = None,
+        audit_manager: "AuditManager | None" = None,
     ) -> None:
         super().__init__()
         self.request_manager = request_manager
         self.document_store = document_store
         self.feedback_manager = feedback_manager
+        self.audit_manager = audit_manager
         self._document_queue: list[Document] = []
         self._current_document: Document | None = None
         self._current_index = 0
@@ -221,6 +223,16 @@ class ReviewTab(QWidget):
                 self._current_document.exemptions,
             )
 
+            # Log document view to audit trail
+            if self.audit_manager and self.request_manager:
+                active_request = self.request_manager.get_active_request()
+                if active_request:
+                    self.audit_manager.log_view(
+                        filename=self._current_document.filename,
+                        tab_name="Review",
+                        request_id=active_request.id
+                    )
+
             # Update decision panel
             self._decision_panel.display_classification(
                 self._current_document.classification,
@@ -282,6 +294,15 @@ class ReviewTab(QWidget):
                     human_decision=self._current_document.human_decision,
                     human_feedback=self._current_document.human_feedback,
                 )
+
+                # Log review decision to audit trail
+                if self.audit_manager:
+                    self.audit_manager.log_review(
+                        filename=self._current_document.filename,
+                        ai_result=self._current_document.classification,
+                        user_decision=self._current_document.human_decision,
+                        request_id=active_request.id
+                    )
 
                 # Capture feedback if human corrected the AI
                 if self.feedback_manager and decision != "approved" and self._current_document.human_decision:

@@ -4,6 +4,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget
 
 from ..constants import (
+    TAB_AUDIT,
     TAB_FINALIZE,
     TAB_INTAKE,
     TAB_REQUESTS,
@@ -12,11 +13,13 @@ from ..constants import (
     WINDOW_INITIAL_SIZE,
     WINDOW_TITLE,
 )
+from ..processing.audit_manager import AuditManager
 from ..processing.document_store import DocumentStore
 from ..processing.feedback_manager import FeedbackManager
 from ..processing.request_manager import RequestManager
 from ..services.embedding_store import EmbeddingStore
 from .styles import MAIN_WINDOW_STYLE
+from .tabs.audit_tab import AuditTab
 from .tabs.finalize_tab import FinalizeTab
 from .tabs.intake_tab import IntakeTab
 from .tabs.requests_tab import RequestsTab
@@ -45,6 +48,7 @@ class MainWindow(QMainWindow):
         self.document_store = DocumentStore()
         self.feedback_manager = FeedbackManager()
         self.embedding_store = EmbeddingStore()
+        self.audit_manager = AuditManager()
 
         # Store source folder path
         self.source_folder = None
@@ -60,15 +64,17 @@ class MainWindow(QMainWindow):
 
         # Create tabs with manager references
         self.requests_tab = RequestsTab(self.request_manager)
-        self.intake_tab = IntakeTab(self.request_manager, self.document_store, self.feedback_manager, self.embedding_store)
-        self.review_tab = ReviewTab(self.request_manager, self.document_store, self.feedback_manager)
-        self.finalize_tab = FinalizeTab(self.request_manager, self.document_store)
+        self.intake_tab = IntakeTab(self.request_manager, self.document_store, self.feedback_manager, self.embedding_store, self.audit_manager)
+        self.review_tab = ReviewTab(self.request_manager, self.document_store, self.feedback_manager, self.audit_manager)
+        self.finalize_tab = FinalizeTab(self.request_manager, self.document_store, self.audit_manager)
+        self.audit_tab = AuditTab(self.audit_manager)
 
         # Add tabs to widget (Requests tab first)
         self.tab_widget.addTab(self.requests_tab, TAB_REQUESTS)
         self.tab_widget.addTab(self.intake_tab, TAB_INTAKE)
         self.tab_widget.addTab(self.review_tab, TAB_REVIEW)
         self.tab_widget.addTab(self.finalize_tab, TAB_FINALIZE)
+        self.tab_widget.addTab(self.audit_tab, TAB_AUDIT)
 
         # Connect signals between tabs
         self._connect_signals()
@@ -165,6 +171,9 @@ class MainWindow(QMainWindow):
 
         # When reprocess with feedback is requested from review tab
         self.review_tab.reprocess_requested.connect(self._on_reprocess_requested)
+        
+        # Connect tab change signal to refresh audit tab
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
 
     def _on_folder_selected(self, folder: Path) -> None:
         """Store the selected source folder."""
@@ -231,3 +240,9 @@ class MainWindow(QMainWindow):
         self.intake_tab._start_reprocessing_with_feedback_from_main(
             self.source_folder
         )
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Handle tab change to refresh audit tab when selected."""
+        current_widget = self.tab_widget.widget(index)
+        if current_widget == self.audit_tab:
+            self.audit_tab.refresh()

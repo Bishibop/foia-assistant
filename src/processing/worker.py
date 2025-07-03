@@ -17,6 +17,7 @@ from .parallel_worker import ParallelDocumentProcessor
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from .audit_manager import AuditManager
     from .feedback_manager import FeedbackManager
 
 
@@ -52,7 +53,8 @@ class ProcessingWorker(QThread):
         request_id: str | None = None,
         feedback_manager: "FeedbackManager | None" = None,
         file_list: list[Path] | None = None,
-        embedding_store: EmbeddingStore | None = None
+        embedding_store: EmbeddingStore | None = None,
+        audit_manager: "AuditManager | None" = None
     ) -> None:
         """Initialize the processing worker.
 
@@ -64,6 +66,7 @@ class ProcessingWorker(QThread):
             feedback_manager: Manager for handling user feedback/corrections
             file_list: Optional specific list of files to process (overrides folder scan)
             embedding_store: Store for document embeddings and duplicate detection
+            audit_manager: Manager for audit trail logging
 
         """
         super().__init__()
@@ -76,6 +79,7 @@ class ProcessingWorker(QThread):
         self.feedback_manager = feedback_manager
         self.file_list = file_list  # Optional specific file list
         self.embedding_store = embedding_store
+        self.audit_manager = audit_manager
         self.embedding_service = EmbeddingService()
 
         # Document metadata storage for two-phase processing
@@ -190,9 +194,27 @@ class ProcessingWorker(QThread):
                     duplicate_count += 1
                     self.stats["duplicates"] = duplicate_count
                     self.stats_updated.emit(self.stats.copy())
+                    
+                    # Log exact duplicate detection to audit trail
+                    if self.audit_manager:
+                        self.audit_manager.log_duplicate(
+                            filename=doc_path.name,
+                            request_id=self.request_id,
+                            is_duplicate=True,
+                            duplicate_of=exact_match,
+                            similarity_score=1.0
+                        )
                 else:
                     # Generate embedding for similarity check
                     embedding = self.embedding_service.generate_embedding(content)
+
+                    # Log embedding generation to audit trail
+                    if self.audit_manager:
+                        self.audit_manager.log_embedding(
+                            filename=doc_path.name,
+                            request_id=self.request_id,
+                            success=embedding is not None
+                        )
 
                     if embedding:
                         # Check for near-duplicates
@@ -214,6 +236,16 @@ class ProcessingWorker(QThread):
                             duplicate_count += 1
                             self.stats["duplicates"] = duplicate_count
                             self.stats_updated.emit(self.stats.copy())
+                            
+                            # Log duplicate detection to audit trail
+                            if self.audit_manager:
+                                self.audit_manager.log_duplicate(
+                                    filename=doc_path.name,
+                                    request_id=self.request_id,
+                                    is_duplicate=True,
+                                    duplicate_of=similar_docs[0][0],
+                                    similarity_score=similar_docs[0][1]
+                                )
                         else:
                             # Original document
                             doc = Document(
@@ -223,6 +255,14 @@ class ProcessingWorker(QThread):
                                 is_duplicate=False,
                                 embedding_generated=True
                             )
+                            
+                            # Log as original document
+                            if self.audit_manager:
+                                self.audit_manager.log_duplicate(
+                                    filename=doc_path.name,
+                                    request_id=self.request_id,
+                                    is_duplicate=False
+                                )
 
                         # Store embedding
                         self.embedding_store.add_embedding(
@@ -446,6 +486,8 @@ class ProcessingWorker(QThread):
         initial_state = create_initial_state(file_path.name, self.foia_request)
         initial_state["content"] = content  # Add the content we already read
         initial_state["feedback_examples"] = self.feedback_examples  # Add feedback examples
+        initial_state["audit_manager"] = self.audit_manager  # Add audit manager for logging
+        initial_state["request_id"] = self.request_id  # Add request ID for audit logging
         
         # Add duplicate metadata if available
         if doc_metadata:

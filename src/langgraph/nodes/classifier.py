@@ -292,6 +292,16 @@ Remember: The human already reviewed documents JUST LIKE THIS ONE and corrected 
                         f"classification={result['classification']}, "
                         f"confidence={result['confidence']:.1%}")
 
+        # Log to audit trail if audit_manager is available
+        audit_manager = state.get("audit_manager")
+        if audit_manager:
+            audit_manager.log_classification(
+                filename=state.get("filename", "unknown"),
+                result=result["classification"],
+                confidence=result["confidence"],
+                request_id=state.get("request_id", "unknown")
+            )
+
         # Result is already parsed by JsonOutputParser (returns dict)
         return {
             "classification": result["classification"],
@@ -300,4 +310,12 @@ Remember: The human already reviewed documents JUST LIKE THIS ONE and corrected 
         }
 
     except Exception as e:
+        # Log error to audit trail if audit_manager is available
+        audit_manager = state.get("audit_manager")
+        if audit_manager:
+            audit_manager.log_error(
+                filename=state.get("filename"),
+                error_message=str(e),
+                request_id=state.get("request_id", "unknown")
+            )
         return create_error_response(e)

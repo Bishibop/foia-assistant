@@ -142,22 +142,15 @@ class AuditManager:
 
         return entries
 
-    def export_csv(self, filepath: Path,
-                  selected_documents: list[str] | None = None) -> None:
-        """Export audit log to CSV file.
+    def export_csv(self, filepath: Path) -> None:
+        """Export all audit entries to CSV file.
         
         Args:
             filepath: Path to save the CSV file
-            selected_documents: Filter by specific documents (optional)
 
         """
-        entries = self._entries
-
-        # Filter by selected documents if provided
-        if selected_documents:
-            entries = [e for e in entries
-                      if not e.document_filename or
-                      e.document_filename in selected_documents]
+        # Sort entries chronologically
+        entries = sorted(self._entries, key=lambda e: e.timestamp)
 
         # Write to CSV
         with open(filepath, 'w', newline='', encoding='utf-8') as f:
@@ -187,6 +180,65 @@ class AuditManager:
 
         # Return sorted list
         return sorted(list(doc_request_pairs))
+
+    def log_embedding(self, filename: str, request_id: str, 
+                     success: bool, processing_time: float | None = None,
+                     error_message: str | None = None) -> None:
+        """Log an embedding generation event.
+        
+        Args:
+            filename: The document filename
+            request_id: The FOIA request ID
+            success: Whether embedding generation was successful
+            processing_time: Time taken to generate embedding (optional)
+            error_message: Error message if failed (optional)
+
+        """
+        if success:
+            details = "Embedding generated successfully"
+            if processing_time:
+                details += f" in {processing_time:.2f}s"
+        else:
+            details = f"Embedding generation failed: {error_message or 'Unknown error'}"
+        
+        entry = AuditEntry(
+            request_id=request_id,
+            document_filename=filename,
+            event_type="embedding",
+            details=details
+        )
+        self._entries.append(entry)
+
+    def log_duplicate(self, filename: str, request_id: str, 
+                     is_duplicate: bool, duplicate_of: str | None = None,
+                     similarity_score: float | None = None) -> None:
+        """Log a duplicate detection/marking event.
+        
+        Args:
+            filename: The document filename
+            request_id: The FOIA request ID
+            is_duplicate: Whether document was marked as duplicate
+            duplicate_of: Original document filename if duplicate
+            similarity_score: Similarity score if near-duplicate
+
+        """
+        if is_duplicate:
+            if similarity_score == 1.0:
+                details = f"Marked as exact duplicate of {duplicate_of}"
+            else:
+                details = f"Marked as duplicate of {duplicate_of}"
+                if similarity_score:
+                    details += f" ({similarity_score:.1%} similar)"
+        else:
+            details = "Marked as original document (no duplicates found)"
+        
+        entry = AuditEntry(
+            request_id=request_id,
+            document_filename=filename,
+            event_type="duplicate",
+            details=details
+        )
+        self._entries.append(entry)
 
     def get_entry_count(self) -> int:
         """Get total number of audit entries.
