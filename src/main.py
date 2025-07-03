@@ -32,6 +32,21 @@ def main() -> None:
 
     # Set application style
     app.setStyle(APP_STYLE)
+    
+    # Set global font sizes for UI descriptors
+    app.setStyleSheet("""
+        QGroupBox {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            padding: 0 3px;
+        }
+        QLabel {
+            font-size: 15px;
+        }
+    """)
 
     # Create and show main window
     window = MainWindow()

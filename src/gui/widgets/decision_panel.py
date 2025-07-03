@@ -42,7 +42,7 @@ class DecisionPanel(QWidget):
 
         # Classification with confidence
         self._classification_label = QLabel("Classification: -")
-        self._classification_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self._classification_label.setStyleSheet("font-weight: bold;")
         ai_layout.addWidget(self._classification_label)
 
         self._confidence_label = QLabel("Confidence: -")
@@ -102,6 +102,9 @@ class DecisionPanel(QWidget):
         override_layout.addWidget(self._override_uncertain)
 
         decision_layout.addLayout(override_layout)
+        
+        # Add spacing between buttons and feedback
+        decision_layout.addSpacing(25)
 
         # Feedback text
         feedback_label = QLabel("Feedback (optional):")

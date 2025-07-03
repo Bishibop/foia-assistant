@@ -253,6 +253,9 @@ class FinalizeTab(QWidget):
         decision_layout.addWidget(self.human_decision_label)
         decision_layout.addWidget(self.confidence_label)
         decision_layout.addWidget(self.feedback_label)
+        
+        # Add spacing before flag button
+        decision_layout.addSpacing(15)
 
         # Flag for review button
         self.flag_button = create_secondary_button("Flag for Review")
