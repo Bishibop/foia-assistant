@@ -708,21 +708,350 @@ class FinalizeTab(QWidget):
         self, documents: list[ProcessedDocument], export_dir: str, timestamp: str
     ) -> str | None:
         """Export documents to Excel format."""
-        # TODO: Implement Excel export with openpyxl
-        QMessageBox.information(
-            self, "Excel Export", "Excel export will be implemented in the next phase."
-        )
-        return None
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+            from openpyxl.utils import get_column_letter
+            
+            filepath = Path(export_dir) / f"foia_export_{timestamp}.xlsx"
+            
+            # Create workbook and get active sheet
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "FOIA Documents"
+            
+            # Define headers
+            headers = [
+                "Filename",
+                "AI Classification",
+                "Human Decision",
+                "Agreement",
+                "Confidence",
+                "Review Timestamp",
+                "Processing Time (s)",
+                "Flagged",
+                "Justification",
+                "Exemptions",
+                "Human Feedback"
+            ]
+            
+            # Style for headers
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_alignment = Alignment(horizontal="center", vertical="center")
+            
+            # Write headers
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+            
+            # Style for disagreement rows
+            disagreement_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+            
+            # Write data
+            for row_idx, proc_doc in enumerate(documents, 2):
+                doc = proc_doc.document
+                
+                # Check if there's disagreement
+                has_disagreement = doc.classification != doc.human_decision
+                
+                # Write data
+                row_data = [
+                    doc.filename,
+                    doc.classification or "",
+                    doc.human_decision or "",
+                    "No" if has_disagreement else "Yes",
+                    f"{doc.confidence:.2f}" if doc.confidence else "",
+                    proc_doc.review_timestamp.isoformat(),
+                    f"{proc_doc.processing_time:.1f}",
+                    "Yes" if proc_doc.flagged_for_review else "No",
+                    doc.justification or "",
+                    len(doc.exemptions) if doc.exemptions else 0,
+                    doc.human_feedback or ""
+                ]
+                
+                for col_idx, value in enumerate(row_data, 1):
+                    cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                    
+                    # Highlight disagreement rows
+                    if has_disagreement:
+                        cell.fill = disagreement_fill
+            
+            # Auto-adjust column widths
+            for column in ws.columns:
+                max_length = 0
+                column_letter = get_column_letter(column[0].column)
+                
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[column_letter].width = adjusted_width
+            
+            # Add summary sheet
+            summary_ws = wb.create_sheet("Summary")
+            
+            # Calculate statistics
+            total_docs = len(documents)
+            responsive = sum(1 for d in documents if d.document.human_decision == "responsive")
+            non_responsive = sum(1 for d in documents if d.document.human_decision == "non_responsive")
+            uncertain = sum(1 for d in documents if d.document.human_decision == "uncertain")
+            agreements = sum(1 for d in documents if d.document.classification == d.document.human_decision)
+            flagged = sum(1 for d in documents if d.flagged_for_review)
+            
+            # Write summary
+            summary_data = [
+                ["FOIA Processing Summary", ""],
+                ["", ""],
+                ["Total Documents", total_docs],
+                ["Responsive", responsive],
+                ["Non-Responsive", non_responsive],
+                ["Uncertain", uncertain],
+                ["", ""],
+                ["AI/Human Agreement", f"{(agreements/total_docs*100):.1f}%" if total_docs > 0 else "0%"],
+                ["Documents Flagged", flagged],
+                ["", ""],
+                ["Export Date", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")]
+            ]
+            
+            for row_idx, (label, value) in enumerate(summary_data, 1):
+                summary_ws.cell(row=row_idx, column=1, value=label).font = Font(bold=True)
+                summary_ws.cell(row=row_idx, column=2, value=value)
+            
+            # Adjust summary column widths
+            summary_ws.column_dimensions['A'].width = 25
+            summary_ws.column_dimensions['B'].width = 20
+            
+            # Save workbook
+            wb.save(filepath)
+            
+            return str(filepath)
+            
+        except ImportError:
+            QMessageBox.critical(
+                self, 
+                "Export Error", 
+                "openpyxl is not installed. Please install it with: pip install openpyxl"
+            )
+            return None
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export Excel: {e}")
+            return None
 
     def _export_pdf(
         self, documents: list[ProcessedDocument], export_dir: str, timestamp: str
     ) -> str | None:
         """Export documents to PDF format."""
-        # TODO: Implement PDF export with reportlab
-        QMessageBox.information(
-            self, "PDF Export", "PDF export will be implemented in the next phase."
-        )
-        return None
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import letter, landscape
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+            from reportlab.platypus.tableofcontents import TableOfContents
+            
+            filepath = Path(export_dir) / f"foia_export_{timestamp}.pdf"
+            
+            # Create PDF document
+            pdf_doc = SimpleDocTemplate(
+                str(filepath),
+                pagesize=landscape(letter),
+                rightMargin=0.5*inch,
+                leftMargin=0.5*inch,
+                topMargin=0.5*inch,
+                bottomMargin=0.5*inch
+            )
+            
+            # Container for the 'Flowable' objects
+            elements = []
+            styles = getSampleStyleSheet()
+            
+            # Title style
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=24,
+                textColor=colors.HexColor('#366092'),
+                spaceAfter=30,
+                alignment=1  # Center alignment
+            )
+            
+            # Add title
+            elements.append(Paragraph("FOIA Document Export Report", title_style))
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Add export date
+            date_style = ParagraphStyle(
+                'DateStyle',
+                parent=styles['Normal'],
+                fontSize=10,
+                textColor=colors.grey,
+                alignment=1
+            )
+            elements.append(
+                Paragraph(
+                    f"Generated: {datetime.now(timezone.utc).strftime('%B %d, %Y at %H:%M:%S UTC')}", 
+                    date_style
+                )
+            )
+            elements.append(Spacer(1, 0.5*inch))
+            
+            # Summary section
+            summary_style = ParagraphStyle(
+                'SummaryHeading',
+                parent=styles['Heading2'],
+                fontSize=16,
+                textColor=colors.HexColor('#366092'),
+                spaceAfter=12
+            )
+            elements.append(Paragraph("Summary Statistics", summary_style))
+            
+            # Calculate statistics
+            total_docs = len(documents)
+            responsive = sum(1 for d in documents if d.document.human_decision == "responsive")
+            non_responsive = sum(1 for d in documents if d.document.human_decision == "non_responsive")
+            uncertain = sum(1 for d in documents if d.document.human_decision == "uncertain")
+            agreements = sum(1 for d in documents if d.document.classification == d.document.human_decision)
+            flagged = sum(1 for d in documents if d.flagged_for_review)
+            
+            # Create summary table
+            summary_data = [
+                ['Metric', 'Value'],
+                ['Total Documents', str(total_docs)],
+                ['Responsive', str(responsive)],
+                ['Non-Responsive', str(non_responsive)],
+                ['Uncertain', str(uncertain)],
+                ['AI/Human Agreement', f"{(agreements/total_docs*100):.1f}%" if total_docs > 0 else "0%"],
+                ['Documents Flagged', str(flagged)]
+            ]
+            
+            summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#366092')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
+            ]))
+            
+            elements.append(summary_table)
+            elements.append(PageBreak())
+            
+            # Document details section
+            elements.append(Paragraph("Document Details", summary_style))
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Create document table headers
+            headers = [
+                'Filename',
+                'AI Class',
+                'Human',
+                'Match',
+                'Conf',
+                'Time',
+                'Flag'
+            ]
+            
+            # Prepare data for document table
+            doc_data = [headers]
+            
+            for proc_doc in documents:
+                doc = proc_doc.document
+                has_disagreement = doc.classification != doc.human_decision
+                
+                row = [
+                    doc.filename[:30] + "..." if len(doc.filename) > 30 else doc.filename,
+                    doc.classification or "-",
+                    doc.human_decision or "-",
+                    "No" if has_disagreement else "Yes",
+                    f"{doc.confidence:.2f}" if doc.confidence else "-",
+                    f"{proc_doc.processing_time:.1f}s",
+                    "🚩" if proc_doc.flagged_for_review else ""
+                ]
+                doc_data.append(row)
+            
+            # Create document table with adjusted column widths
+            doc_table = Table(
+                doc_data, 
+                colWidths=[3*inch, 1.3*inch, 1.3*inch, 0.7*inch, 0.7*inch, 0.8*inch, 0.5*inch]
+            )
+            
+            # Define table style
+            table_style = [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#366092')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),  # Left align filenames
+            ]
+            
+            # Highlight disagreement rows
+            for i, proc_doc in enumerate(documents, 1):
+                if proc_doc.document.classification != proc_doc.document.human_decision:
+                    table_style.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor('#FFC7CE')))
+            
+            doc_table.setStyle(TableStyle(table_style))
+            elements.append(doc_table)
+            
+            # Add page break before exemptions if needed
+            if any(d.document.exemptions for d in documents):
+                elements.append(PageBreak())
+                elements.append(Paragraph("Exemption Details", summary_style))
+                elements.append(Spacer(1, 0.2*inch))
+                
+                # Create exemption summary
+                exemption_count = sum(len(d.document.exemptions) if d.document.exemptions else 0 for d in documents)
+                elements.append(
+                    Paragraph(
+                        f"Total exemptions found: {exemption_count}",
+                        styles['Normal']
+                    )
+                )
+                elements.append(Spacer(1, 0.1*inch))
+                
+                # List documents with exemptions
+                for proc_doc in documents:
+                    if proc_doc.document.exemptions:
+                        elements.append(
+                            Paragraph(
+                                f"• {proc_doc.document.filename}: {len(proc_doc.document.exemptions)} exemptions",
+                                styles['Normal']
+                            )
+                        )
+            
+            # Build PDF
+            pdf_doc.build(elements)
+            
+            return str(filepath)
+            
+        except ImportError:
+            QMessageBox.critical(
+                self, 
+                "Export Error", 
+                "reportlab is not installed. Please install it with: pip install reportlab"
+            )
+            return None
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export PDF: {e}")
+            return None
 
     def generate_foia_package(self) -> None:
         """Generate complete FOIA response package."""

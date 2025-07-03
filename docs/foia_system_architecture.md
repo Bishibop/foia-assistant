@@ -46,6 +46,14 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
 └─────────┬───────────────────────────────────────────────────┘
           │
 ┌─────────▼───────────────────────────────────────────────────┐
+│            Parallel Document Processor                       │
+│  ┌─────────────┬─────────────┬─────────────────────────┐   │
+│  │ Worker Pool │ Task Queue  │ Progress Aggregation    │   │
+│  │ (4 workers) │ Distribution│ & Rate Calculation      │   │
+│  └─────────────┴─────────────┴─────────────────────────┘   │
+└─────────┬───────────────────────────────────────────────────┘
+          │ (multiprocessing)
+┌─────────▼───────────────────────────────────────────────────┐
 │                  LangGraph Workflow Engine                   │
 │  ┌────────────┬──────────────┬────────────────────────┐    │
 │  │ Document   │ AI           │ PII Detection          │    │
@@ -89,6 +97,16 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
   - API key via environment variable: `OPENAI_API_KEY`
   - JSON response format enforced
 
+### Export Libraries
+- **openpyxl** - Excel file generation
+  - Creates XLSX files with multiple sheets
+  - Supports cell styling and formatting
+  - Auto-adjusts column widths
+- **reportlab** - PDF generation
+  - Professional report formatting
+  - Table layouts with styling
+  - Page management and flowables
+
 ### Data Storage
 - **In-Memory Only** - No persistence in current implementation
   - Multiple FOIA requests managed by RequestManager
@@ -106,7 +124,12 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
 ### Threading Model
 - **Main Thread**: PyQt6 GUI event loop
 - **Worker Thread**: ProcessingWorker (QThread) for document processing
-- **Communication**: Qt signals/slots for thread-safe updates
+- **Worker Processes**: ParallelDocumentProcessor spawns up to 4 worker processes
+- **Communication**: 
+  - Qt signals/slots for thread-safe GUI updates
+  - Multiprocessing queues for inter-process communication
+  - Progress aggregation from multiple workers
+- **Signals**:
   - `progress_updated(current, total)` - Progress tracking
   - `document_processing(filename)` - Current file indicator
   - `document_processed(Document)` - Completed document data
@@ -114,6 +137,8 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
   - `processing_complete()` - Batch completion signal
   - `error_occurred(str)` - Error propagation
   - `documents_processed(list[Document])` - Documents ready for review
+  - `processing_rate_updated(float)` - Documents per minute
+  - `worker_count_updated(int)` - Active worker processes
 - **Tab Communication Signals**:
   - `folder_selected(Path)` - Folder selection from IntakeTab
   - `processing_started()` - Clear all tabs when reprocessing
@@ -128,15 +153,20 @@ RAPID RESPONSE AI is a desktop application designed to accelerate Freedom of Inf
 1. User creates or selects FOIA request in Requests tab
 2. User selects folder for document processing in Intake tab
 3. ProcessingWorker thread spawned with document list and active request ID
-4. Documents processed sequentially through LangGraph
-5. Each document result emitted via Qt signal and stored by request
-6. GUI updates in real-time with progress and results
-7. Statistics accumulated per request and displayed
-8. On completion, documents stored in DocumentStore for the request
-9. User reviews documents in Review tab (filtered by active request)
-10. Human decisions captured and stored in Document objects
-11. Reviewed documents available in Finalize tab (filtered by active request)
-12. User can export documents or generate FOIA response package per request
+4. For batches >3 documents, ParallelDocumentProcessor creates worker pool
+5. Documents distributed to workers via task queue
+6. Each worker process:
+   - Creates its own LangGraph workflow instance
+   - Processes documents through the workflow
+   - Returns results via result queue
+7. Progress aggregated and emitted via Qt signals
+8. GUI updates in real-time with progress, rate, and worker count
+9. Statistics accumulated per request and displayed
+10. On completion, documents stored in DocumentStore for the request
+11. User reviews documents in Review tab (filtered by active request)
+12. Human decisions captured and stored in Document objects
+13. Reviewed documents available in Finalize tab (filtered by active request)
+14. User can export documents (CSV, JSON, Excel, PDF) or generate FOIA response package per request
 
 ### Error Handling Strategy
 - Graceful degradation on errors
@@ -194,6 +224,21 @@ class Classification(str, Enum):
     RESPONSIVE = "responsive"
     NON_RESPONSIVE = "non_responsive"
     UNCERTAIN = "uncertain"
+
+@dataclass
+class ProcessingTask:
+    """Represents a document processing task for parallel workers"""
+    document_path: Path
+    foia_request: str
+    task_id: int
+
+@dataclass
+class ProcessingResult:
+    """Represents the result of a document processing task"""
+    task_id: int
+    document: Document | None = None
+    error: str | None = None
+    processing_time: float = 0.0
 
 class DocumentState(TypedDict):
     filename: str
@@ -297,7 +342,7 @@ workflow.add_edge("detect_exemptions", END)
   - Document table filtered by active request
   - Statistics bar showing request-specific totals
   - Document viewer with decision information
-  - Export options (CSV, JSON, Excel*, PDF*)
+  - Export options (CSV, JSON, Excel, PDF)
   - Generate FOIA Package functionality
   - Flag for review capability
   - Active request display (top-right)
@@ -334,10 +379,25 @@ workflow.add_edge("detect_exemptions", END)
 - API key stored in local .env file
 
 ## Performance Characteristics
-- Sequential document processing (no parallelization)
-- ~2-5 seconds per document (depends on API latency)
-- Memory usage proportional to document count
-- No caching between sessions
+- **Parallel Processing**: Up to 4 concurrent worker processes
+- **Automatic Optimization**: 
+  - Sequential processing for ≤3 documents
+  - Parallel processing for >3 documents
+- **Processing Speed**: 
+  - Sequential: ~2-5 seconds per document
+  - Parallel: ~4x speedup for larger batches
+- **Batch Distribution**: Dynamic batch sizing based on document count
+- **Worker Management**: 
+  - Capped at 4 workers to prevent system overload
+  - Graceful fallback to sequential on worker failures
+- **Memory Usage**: 
+  - Base usage proportional to document count
+  - Additional ~50MB per worker process
+- **Real-time Monitoring**:
+  - Processing rate in documents/minute
+  - Active worker count display
+  - Per-document progress updates
+- **No caching between sessions**
 
 ## File System Integration
 - **Flat directory processing** - No nested folders in MVP
@@ -395,7 +455,8 @@ src/
 ├── processing/
 │   ├── request_manager.py # Request CRUD operations (new)
 │   ├── document_store.py  # Request-scoped documents (new)
-│   └── worker.py         # Background processing thread
+│   ├── worker.py         # Background processing thread
+│   └── parallel_worker.py # Multiprocessing document processor
 └── utils/
     ├── error_handling.py # Standardized error responses
     └── statistics.py     # Document statistics calculations
@@ -422,6 +483,8 @@ langchain >= 0.3.0
 langchain-openai >= 0.2.0
 openai >= 1.0.0
 python-dotenv >= 1.0.0
+openpyxl >= 3.1.0
+reportlab >= 4.0.0
 
 # Development
 black >= 25.1.0
@@ -442,7 +505,7 @@ pre-commit >= 3.5.0
 - **No authentication** - Direct file system access
 - **Flat directories** - No recursive folder processing
 - **Basic error handling** - Fail gracefully, no recovery
-- **Limited export formats** - CSV and JSON only (Excel/PDF placeholders)
+- **Multiple export formats** - CSV, JSON, Excel (XLSX), and PDF
 - **Request isolation** - Documents cannot be shared between requests
 
 ## Key Features
