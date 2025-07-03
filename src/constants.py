@@ -1,17 +1,17 @@
 """Constants used throughout the FOIA Response Assistant application."""
 
 # Window configuration
-WINDOW_TITLE = "FOIA Response Assistant"
-WINDOW_INITIAL_SIZE = (1200, 800)
+WINDOW_TITLE = "RAPID RESPONSE AI"
+WINDOW_INITIAL_SIZE = (1400, 900)
 WINDOW_INITIAL_POSITION = (100, 100)
 
 # Application styling
 APP_STYLE = "Fusion"
 
 # Tab names
-TAB_PROCESSING = "Processing"
+TAB_INTAKE = "Intake"
 TAB_REVIEW = "Review"
-TAB_PROCESSED = "Processed"
+TAB_FINALIZE = "Finalize"
 
 # GUI Layout constants
 SPLITTER_SIZES = [400, 600]  # 40% config, 60% status
@@ -92,11 +92,13 @@ BUTTON_STYLE_SECONDARY = """
 
 BUTTON_STYLE_WARNING = """
     QPushButton {
-        padding: 5px 15px;
+        padding: 10px 30px;
         background-color: #ffc107;
         color: #212529;
         border: none;
         border-radius: 3px;
+        font-size: 16px;
+        font-weight: bold;
     }
     QPushButton:hover:enabled {
         background-color: #e0a800;

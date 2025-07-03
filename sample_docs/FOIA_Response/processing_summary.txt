@@ -1,0 +1,13 @@
+FOIA PROCESSING SUMMARY REPORT
+==================================================
+
+Generated: 2025-07-03 05:20:44
+
+DOCUMENT STATISTICS:
+Total Documents Processed: 9
+Responsive Documents: 6
+Non-Responsive Documents: 3
+Uncertain Documents: 0
+
+AI/Human Agreement Rate: 88.9%
+

@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.constants import MAIN_LAYOUT_MARGINS, STATUS_MESSAGE_MAX_HEIGHT, STATUS_MESSAGE_TIMEOUT_MS
+from src.gui.styles import create_secondary_button
 from src.gui.widgets.decision_panel import DecisionPanel
 from src.gui.widgets.document_viewer import DocumentViewer
 from src.models.document import Document
@@ -21,6 +22,7 @@ class ReviewTab(QWidget):
     review_completed = pyqtSignal(
         Document
     )  # Emitted when a document review is completed
+    all_documents_reviewed = pyqtSignal()  # Emitted when queue is empty
 
     def __init__(self) -> None:
         super().__init__()
@@ -29,6 +31,8 @@ class ReviewTab(QWidget):
         self._current_index = 0
         self._init_ui()
         self._update_queue_display()
+        self._update_navigation()
+        self._decision_panel.clear()  # Initially disable all decision buttons
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout()
@@ -75,7 +79,7 @@ class ReviewTab(QWidget):
         """Create the navigation control buttons."""
         nav_layout = QHBoxLayout()
 
-        self._prev_button = QPushButton("← Previous")
+        self._prev_button = create_secondary_button("← Previous")
         self._prev_button.clicked.connect(self._previous_document)
         nav_layout.addWidget(self._prev_button)
 
@@ -83,15 +87,12 @@ class ReviewTab(QWidget):
         self._document_counter.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(self._document_counter)
 
-        self._next_button = QPushButton("Next →")
+        self._next_button = create_secondary_button("Next →")
         self._next_button.clicked.connect(self._next_document)
         nav_layout.addWidget(self._next_button)
-
+        
+        # Add stretch to keep buttons left-aligned
         nav_layout.addStretch()
-
-        self._skip_button = QPushButton("Skip Document")
-        self._skip_button.clicked.connect(self._skip_document)
-        nav_layout.addWidget(self._skip_button)
 
         return nav_layout
 
@@ -173,9 +174,14 @@ class ReviewTab(QWidget):
         current = self._current_index + 1 if total > 0 else 0
 
         self._document_counter.setText(f"{current} / {total}")
-        self._prev_button.setEnabled(self._current_index > 0)
-        self._next_button.setEnabled(self._current_index < total - 1)
-        self._skip_button.setEnabled(total > 0)
+        
+        # Disable all navigation buttons if no documents
+        if total == 0:
+            self._prev_button.setEnabled(False)
+            self._next_button.setEnabled(False)
+        else:
+            self._prev_button.setEnabled(self._current_index > 0)
+            self._next_button.setEnabled(self._current_index < total - 1)
 
     def _update_queue_display(self) -> None:
         """Update queue status display."""
@@ -222,6 +228,7 @@ class ReviewTab(QWidget):
             self._decision_panel.clear()
             self._update_navigation()
             self._show_status_message("All documents reviewed!")
+            self.all_documents_reviewed.emit()
 
     def _previous_document(self) -> None:
         """Navigate to previous document."""
@@ -233,13 +240,6 @@ class ReviewTab(QWidget):
         if self._current_index < len(self._document_queue) - 1:
             self._display_document(self._current_index + 1)
 
-    def _skip_document(self) -> None:
-        """Skip current document and move to next."""
-        if self._document_queue:
-            # Move to next or wrap to beginning
-            new_index = (self._current_index + 1) % len(self._document_queue)
-            self._display_document(new_index)
-            self._show_status_message("Document skipped")
 
     def _show_status_message(self, message: str) -> None:
         """Show temporary status message."""
@@ -269,17 +269,25 @@ class ReviewTab(QWidget):
             # Left arrow = Previous
             self._previous_document()
         elif key == Qt.Key.Key_Right:
-            # Right arrow = Next/Skip
-            if self._next_button.isEnabled():
-                self._next_document()
-            else:
-                self._skip_document()
+            # Right arrow = Next
+            self._next_document()
         else:
             super().keyPressEvent(event)
 
     def get_queue_count(self) -> int:
         """Get number of documents in queue."""
         return len(self._document_queue)
+    
+    def clear_all(self) -> None:
+        """Clear all documents from the review queue."""
+        self._document_queue.clear()
+        self._current_document = None
+        self._current_index = 0
+        self._document_viewer.clear()
+        self._decision_panel.clear()
+        self._update_queue_display()
+        self._update_navigation()
+        self._status_message.clear()
 
     def showEvent(self, event: QShowEvent | None) -> None:  # noqa: N802
         """Handle widget show event to properly set splitter sizes."""

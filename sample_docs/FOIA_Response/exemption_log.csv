@@ -1,0 +1,15 @@
+filename,exemption_type,exemption_code,redacted_text,location
+budget_report_q1.txt,phone,b6,555-123-4567,308-320
+employee_directory_2024.txt,phone,b6,555-100-0001,142-154
+employee_directory_2024.txt,phone,b6,555-100-0002,237-249
+employee_directory_2024.txt,phone,b6,555-123-4567,384-396
+employee_directory_2024.txt,phone,b6,555-234-5678,470-482
+employee_directory_2024.txt,phone,b6,555-300-0001,578-590
+employee_directory_2024.txt,ssn,b6,234-56-7890,187-198
+employee_directory_2024.txt,ssn,b6,345-67-8901,279-290
+employee_directory_2024.txt,ssn,b6,123-45-6789,427-438
+employee_directory_2024.txt,ssn,b6,456-78-9012,513-524
+employee_directory_2024.txt,ssn,b6,567-89-0123,621-632
+email_blue_sky_update.txt,phone,b6,555-123-4567,404-416
+email_blue_sky_update.txt,ssn,b6,123-45-6789,558-569
+email_sky_reference.txt,phone,b6,555-400-1234,548-560

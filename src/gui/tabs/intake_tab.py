@@ -35,8 +35,8 @@ from ..widgets.status_panel import StatusPanel
 logger = logging.getLogger(__name__)
 
 
-class ProcessingTab(QWidget):
-    """Tab for document processing setup.
+class IntakeTab(QWidget):
+    """Tab for document intake and AI processing.
 
     Allows users to select a folder of documents and enter a FOIA request
     to process documents against. Provides controls to start the AI processing.
@@ -45,6 +45,8 @@ class ProcessingTab(QWidget):
     documents_processed = pyqtSignal(
         list
     )  # Emitted when documents are ready for review
+    folder_selected = pyqtSignal(Path)  # Emitted when a folder is selected
+    processing_started = pyqtSignal()  # Emitted when processing starts
 
     def __init__(self) -> None:
         super().__init__()
@@ -200,6 +202,9 @@ class ProcessingTab(QWidget):
                 f"Selected folder: {self.selected_folder} "
                 f"(found {len(txt_files)} .txt files)"
             )
+            
+            # Emit the folder selection
+            self.folder_selected.emit(self.selected_folder)
 
             self._check_ready_to_process()
 
@@ -233,6 +238,9 @@ class ProcessingTab(QWidget):
             self.select_folder_btn.setEnabled(False)
             self.request_text.setReadOnly(True)
 
+            # Emit signal to clear all tabs
+            self.processing_started.emit()
+            
             # Reset status panel and documents list
             self.status_panel.reset()
             self.processed_documents.clear()
@@ -332,18 +340,15 @@ class ProcessingTab(QWidget):
         if self.processed_documents:
             self.documents_processed.emit(self.processed_documents.copy())
 
-        # Show summary
+        # Log completion summary to activity panel instead of showing alert
         stats = self.worker.stats if self.worker else {}
-        QMessageBox.information(
-            self,
-            "Processing Complete",
-            f"Processing complete!\n\n"
-            f"Total documents: {stats.get('total', 0)}\n"
-            f"Processed: {stats.get('processed', 0)}\n"
-            f"Responsive: {stats.get('responsive', 0)}\n"
-            f"Non-responsive: {stats.get('non_responsive', 0)}\n"
-            f"Uncertain: {stats.get('uncertain', 0)}\n"
-            f"Errors: {stats.get('errors', 0)}",
+        self.status_panel.add_log_entry(
+            f"[{datetime.now(timezone.utc).strftime(TIME_FORMAT)}] Processing complete! "
+            f"Total: {stats.get('total', 0)}, "
+            f"Responsive: {stats.get('responsive', 0)}, "
+            f"Non-responsive: {stats.get('non_responsive', 0)}, "
+            f"Uncertain: {stats.get('uncertain', 0)}, "
+            f"Errors: {stats.get('errors', 0)}"
         )
 
         # Clean up worker

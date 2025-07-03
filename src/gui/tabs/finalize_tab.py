@@ -2,6 +2,7 @@
 
 import csv
 import json
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,10 +15,12 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -25,7 +28,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.gui.styles import create_styled_button
+from src.constants import MAIN_LAYOUT_MARGINS
+from src.gui.styles import create_primary_button, create_secondary_button
 from src.gui.widgets.document_viewer import DocumentViewer
 from src.models.document import Document
 
@@ -40,8 +44,8 @@ class ProcessedDocument:
     flagged_for_review: bool = False
 
 
-class ProcessedTab(QWidget):
-    """Tab for viewing and managing processed documents."""
+class FinalizeTab(QWidget):
+    """Tab for finalizing document review and generating export packages."""
 
     # Signals
     export_requested = pyqtSignal(list)  # List of documents to export
@@ -52,21 +56,26 @@ class ProcessedTab(QWidget):
         super().__init__()
         self.processed_documents: list[ProcessedDocument] = []
         self.filtered_documents: list[ProcessedDocument] = []
+        self.source_folder: Path | None = None
+        self.all_documents_reviewed = False
         self.setup_ui()
 
     def setup_ui(self) -> None:
         """Set up the user interface."""
         layout = QVBoxLayout()
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setContentsMargins(*MAIN_LAYOUT_MARGINS)
         layout.setSpacing(10)
+
+        # Title
+        from ..styles import create_title_label
+        title = create_title_label("Finalize Package")
+        layout.addWidget(title)
 
         # Toolbar
         toolbar_layout = self._create_toolbar()
-        layout.addLayout(toolbar_layout)
+        layout.addLayout(toolbar_layout, 0)  # No stretch
 
-        # Statistics bar with legend
-        stats_layout = QHBoxLayout()
-        
+        # Statistics bar
         self.stats_label = QLabel("Total: 0 | R: 0 | N: 0 | U: 0 | Agreement: 0%")
         self.stats_label.setStyleSheet(
             """
@@ -79,34 +88,8 @@ class ProcessedTab(QWidget):
             """
         )
         self.stats_label.setMaximumHeight(30)
-        stats_layout.addWidget(self.stats_label)
-        
-        stats_layout.addStretch()
-        
-        # Legend
-        legend_label = QLabel("Legend: ")
-        legend_label.setStyleSheet("font-weight: bold;")
-        stats_layout.addWidget(legend_label)
-        
-        # Disagreement indicator
-        disagreement_sample = QLabel("  Disagreement  ")
-        disagreement_sample.setStyleSheet(
-            """
-            QLabel {
-                background-color: rgb(255, 200, 200);
-                padding: 2px 5px;
-                border-radius: 3px;
-            }
-            """
-        )
-        stats_layout.addWidget(disagreement_sample)
-        
-        # Flag indicator
-        flag_sample = QLabel("🚩 = Flagged for Review")
-        flag_sample.setStyleSheet("padding: 0 10px;")
-        stats_layout.addWidget(flag_sample)
-        
-        layout.addLayout(stats_layout)
+        self.stats_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        layout.addWidget(self.stats_label)
 
         # Main content area with splitter
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -120,11 +103,15 @@ class ProcessedTab(QWidget):
         right_panel = self._create_right_panel()
         self.splitter.addWidget(right_panel)
 
-        # Set initial splitter sizes (40/60 ratio)
-        self.splitter.setSizes([400, 600])
+        # Set initial splitter sizes (60/40 ratio)
+        self.splitter.setSizes([600, 400])
 
-        layout.addWidget(self.splitter)
+        # Add splitter with stretch to take remaining space
+        layout.addWidget(self.splitter, 1)  # Stretch factor of 1
         self.setLayout(layout)
+        
+        # Initially disable buttons
+        self.update_button_states()
 
     def _create_toolbar(self) -> QHBoxLayout:
         """Create the toolbar with search and filter controls."""
@@ -151,30 +138,28 @@ class ProcessedTab(QWidget):
         self.filter_dropdown.currentIndexChanged.connect(self.apply_filters)
         toolbar.addWidget(self.filter_dropdown)
 
-        # Date range button
-        self.date_range_button = QPushButton("Date Range ▼")
-        self.date_range_button.clicked.connect(self.show_date_picker)
-        toolbar.addWidget(self.date_range_button)
-
         toolbar.addStretch()
 
+        # Export button (dynamic text)
+        self.export_button = create_secondary_button("Export All")
+        self.export_button.clicked.connect(self.export_documents)
+        toolbar.addWidget(self.export_button)
+
         # Generate package button
-        self.generate_package_button = create_styled_button(
-            "Generate FOIA Package", "primary"
+        self.generate_package_button = create_primary_button(
+            "Generate FOIA Package"
         )
         self.generate_package_button.clicked.connect(self.generate_foia_package)
         toolbar.addWidget(self.generate_package_button)
-
-        # Export button (dynamic text)
-        self.export_button = create_styled_button("Export All", "secondary")
-        self.export_button.clicked.connect(self.export_documents)
-        toolbar.addWidget(self.export_button)
 
         return toolbar
 
     def _create_left_panel(self) -> QWidget:
         """Create the left panel with document list and export options."""
         panel = QWidget()
+        # Set size policy to allow expansion
+        panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -193,10 +178,16 @@ class ProcessedTab(QWidget):
         )
         self.document_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.document_table.itemSelectionChanged.connect(self.on_document_selected)
-        layout.addWidget(self.document_table)
+        # Set size policy for the table to expand
+        self.document_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Make the filename column stretch to fill available space
+        self.document_table.horizontalHeader().setStretchLastSection(False)
+        self.document_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.document_table, 1)  # Add stretch factor of 1
 
         # Export format options
         export_group = QGroupBox("Export Formats")
+        export_group.setMaximumHeight(80)  # Set maximum height for export group
         export_layout = QHBoxLayout()
 
         self.csv_checkbox = QCheckBox("CSV")
@@ -212,7 +203,7 @@ class ProcessedTab(QWidget):
         export_layout.addStretch()
 
         export_group.setLayout(export_layout)
-        layout.addWidget(export_group)
+        layout.addWidget(export_group, 0)  # No stretch for export group
 
         panel.setLayout(layout)
         return panel
@@ -234,14 +225,17 @@ class ProcessedTab(QWidget):
         self.ai_decision_label = QLabel("AI Classification: -")
         self.human_decision_label = QLabel("Human Decision: -")
         self.confidence_label = QLabel("Confidence: -")
+        self.feedback_label = QLabel("Feedback: -")
 
         decision_layout.addWidget(self.ai_decision_label)
         decision_layout.addWidget(self.human_decision_label)
         decision_layout.addWidget(self.confidence_label)
+        decision_layout.addWidget(self.feedback_label)
 
         # Flag for review button
-        self.flag_button = create_styled_button("Flag for Review", "secondary")
+        self.flag_button = create_secondary_button("Flag for Review")
         self.flag_button.clicked.connect(self.toggle_flag)
+        self.flag_button.setEnabled(False)  # Initially disabled
         decision_layout.addWidget(self.flag_button)
 
         self.decision_panel.setLayout(decision_layout)
@@ -264,6 +258,7 @@ class ProcessedTab(QWidget):
         self.processed_documents.append(processed_doc)
         self.apply_filters()
         self.update_statistics()
+        self.update_button_states()
 
     def apply_filters(self) -> None:
         """Apply current filters to the document list."""
@@ -302,8 +297,6 @@ class ProcessedTab(QWidget):
                 for doc in filtered
                 if doc.document.classification != doc.document.human_decision
             ]
-
-        # TODO: Apply date range filter when implemented
 
         self.filtered_documents = filtered
         self.refresh_table()
@@ -373,8 +366,15 @@ class ProcessedTab(QWidget):
             f"Confidence: {doc.confidence:.2f}" if doc.confidence else "Confidence: -"
         )
         self.confidence_label.setText(confidence_text)
+        
+        # Update feedback label
+        if doc.human_feedback:
+            self.feedback_label.setText(f"Feedback: {doc.human_feedback}")
+        else:
+            self.feedback_label.setText("Feedback: -")
 
         # Update flag button
+        self.flag_button.setEnabled(True)  # Enable when document is displayed
         if proc_doc.flagged_for_review:
             self.flag_button.setText("Remove Flag")
         else:
@@ -423,6 +423,14 @@ class ProcessedTab(QWidget):
             self.export_button.setText(f"Export Selection ({selected_count})")
         else:
             self.export_button.setText("Export All")
+    
+    def update_button_states(self) -> None:
+        """Update the enabled state of export and FOIA package buttons."""
+        has_documents = len(self.processed_documents) > 0
+        enabled = has_documents and self.all_documents_reviewed
+        
+        self.export_button.setEnabled(enabled)
+        self.generate_package_button.setEnabled(enabled)
 
     def get_selected_documents(self) -> list[ProcessedDocument]:
         """Get list of selected documents."""
@@ -433,11 +441,33 @@ class ProcessedTab(QWidget):
                 selected.append(self.filtered_documents[row])
         return selected
 
-    def show_date_picker(self) -> None:
-        """Show date range picker dialog."""
-        # TODO: Implement date picker dialog
-        pass
 
+    def set_source_folder(self, folder: Path) -> None:
+        """Set the source folder for FOIA package generation."""
+        self.source_folder = folder
+    
+    def set_all_documents_reviewed(self, reviewed: bool) -> None:
+        """Set whether all documents have been reviewed."""
+        self.all_documents_reviewed = reviewed
+        self.update_button_states()
+    
+    def clear_all(self) -> None:
+        """Clear all documents from the finalize tab."""
+        self.processed_documents.clear()
+        self.filtered_documents.clear()
+        self.document_table.setRowCount(0)
+        self.document_viewer.clear()
+        self.ai_decision_label.setText("AI Classification: -")
+        self.human_decision_label.setText("Human Decision: -")
+        self.confidence_label.setText("Confidence: -")
+        self.feedback_label.setText("Feedback: -")
+        self.flag_button.setEnabled(False)  # Disable when clearing
+        self.flag_button.setText("Flag for Review")  # Reset text
+        self.all_documents_reviewed = False
+        self.update_statistics()
+        self.update_export_button()
+        self.update_button_states()
+    
     def toggle_flag(self) -> None:
         """Toggle flag for review on current document."""
         current_row = self.document_table.currentRow()
@@ -449,6 +479,15 @@ class ProcessedTab(QWidget):
 
     def export_documents(self) -> None:
         """Export documents in selected formats."""
+        # Check if source folder is set
+        if not self.source_folder:
+            QMessageBox.warning(
+                self,
+                "No Source Folder",
+                "Please select a folder in the Intake tab first.",
+            )
+            return
+            
         # Get documents to export
         selected = self.get_selected_documents()
         if not selected and not self.processed_documents:
@@ -457,44 +496,71 @@ class ProcessedTab(QWidget):
 
         documents_to_export = selected if selected else self.processed_documents
 
-        # Get export directory
-        export_dir = QFileDialog.getExistingDirectory(
-            self, "Select Export Directory", ""
-        )
-        if not export_dir:
-            return
+        try:
+            # Create export directory next to source folder
+            export_dir = self.source_folder / "FOIA_Exports"
+            
+            # Remove existing export directory if it exists
+            if export_dir.exists():
+                shutil.rmtree(export_dir)
+            
+            export_dir.mkdir(exist_ok=True)
 
-        # Export in selected formats
-        exported_files = []
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            # Export in selected formats
+            exported_files = []
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-        if self.csv_checkbox.isChecked():
-            filename = self._export_csv(documents_to_export, export_dir, timestamp)
-            if filename:
-                exported_files.append(filename)
+            if self.csv_checkbox.isChecked():
+                filename = self._export_csv(documents_to_export, str(export_dir), timestamp)
+                if filename:
+                    exported_files.append(Path(filename).name)
 
-        if self.json_checkbox.isChecked():
-            filename = self._export_json(documents_to_export, export_dir, timestamp)
-            if filename:
-                exported_files.append(filename)
+            if self.json_checkbox.isChecked():
+                filename = self._export_json(documents_to_export, str(export_dir), timestamp)
+                if filename:
+                    exported_files.append(Path(filename).name)
 
-        if self.excel_checkbox.isChecked():
-            filename = self._export_excel(documents_to_export, export_dir, timestamp)
-            if filename:
-                exported_files.append(filename)
+            if self.excel_checkbox.isChecked():
+                filename = self._export_excel(documents_to_export, str(export_dir), timestamp)
+                if filename:
+                    exported_files.append(Path(filename).name)
 
-        if self.pdf_checkbox.isChecked():
-            filename = self._export_pdf(documents_to_export, export_dir, timestamp)
-            if filename:
-                exported_files.append(filename)
+            if self.pdf_checkbox.isChecked():
+                filename = self._export_pdf(documents_to_export, str(export_dir), timestamp)
+                if filename:
+                    exported_files.append(Path(filename).name)
 
-        # Show success message
-        if exported_files:
-            QMessageBox.information(
+            # Show success message with option to open folder
+            if exported_files:
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("Export Complete")
+                msg_box.setText(
+                    f"Exported {len(documents_to_export)} documents successfully!\n\n"
+                    f"Location: {export_dir}\n"
+                    f"Files: {', '.join(exported_files)}"
+                )
+                msg_box.setStandardButtons(
+                    QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Ok
+                )
+                msg_box.setDefaultButton(QMessageBox.StandardButton.Open)
+                
+                if msg_box.exec() == QMessageBox.StandardButton.Open:
+                    # Open the folder in the system file manager
+                    import subprocess
+                    import platform
+                    
+                    if platform.system() == "Windows":
+                        subprocess.run(["explorer", str(export_dir)])
+                    elif platform.system() == "Darwin":  # macOS
+                        subprocess.run(["open", str(export_dir)])
+                    else:  # Linux and others
+                        subprocess.run(["xdg-open", str(export_dir)])
+                        
+        except Exception as e:
+            QMessageBox.critical(
                 self,
-                "Export Complete",
-                f"Exported {len(documents_to_export)} documents to:\n"
-                + "\n".join(exported_files),
+                "Export Error",
+                f"Failed to export documents: {e}",
             )
 
     def _export_csv(
@@ -598,6 +664,15 @@ class ProcessedTab(QWidget):
 
     def generate_foia_package(self) -> None:
         """Generate complete FOIA response package."""
+        # Check if source folder is set
+        if not self.source_folder:
+            QMessageBox.warning(
+                self,
+                "No Source Folder",
+                "Please select a folder in the Intake tab first.",
+            )
+            return
+            
         # Get responsive documents only
         responsive_docs = [
             doc
@@ -613,17 +688,14 @@ class ProcessedTab(QWidget):
             )
             return
 
-        # Get output directory
-        output_dir = QFileDialog.getExistingDirectory(
-            self, "Select Output Directory for FOIA Package", ""
-        )
-        if not output_dir:
-            return
-
         try:
-            # Create package directory
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            package_dir = Path(output_dir) / f"FOIA_Response_Package_{timestamp}"
+            # Create package directory next to source folder
+            package_dir = self.source_folder / "FOIA_Response"
+            
+            # Remove existing package if it exists
+            if package_dir.exists():
+                shutil.rmtree(package_dir)
+            
             package_dir.mkdir(exist_ok=True)
 
             # Create subdirectories
@@ -645,11 +717,30 @@ class ProcessedTab(QWidget):
             # Generate cover letter template
             self._generate_cover_letter(package_dir, len(responsive_docs))
 
-            QMessageBox.information(
-                self,
-                "Package Generated",
-                f"FOIA response package generated successfully:\n{package_dir}",
+            # Show success with option to open folder
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Package Generated")
+            msg_box.setText(
+                f"FOIA response package generated successfully!\n\n"
+                f"Location: {package_dir}\n"
+                f"Included: {len(responsive_docs)} responsive documents"
             )
+            msg_box.setStandardButtons(
+                QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Ok
+            )
+            msg_box.setDefaultButton(QMessageBox.StandardButton.Open)
+            
+            if msg_box.exec() == QMessageBox.StandardButton.Open:
+                # Open the folder in the system file manager
+                import subprocess
+                import platform
+                
+                if platform.system() == "Windows":
+                    subprocess.run(["explorer", str(package_dir)])
+                elif platform.system() == "Darwin":  # macOS
+                    subprocess.run(["open", str(package_dir)])
+                else:  # Linux and others
+                    subprocess.run(["xdg-open", str(package_dir)])
 
         except Exception as e:
             QMessageBox.critical(

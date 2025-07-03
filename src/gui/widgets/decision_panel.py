@@ -76,6 +76,25 @@ class DecisionPanel(QWidget):
         self._override_responsive.clicked.connect(
             lambda: self._make_decision("responsive")
         )
+        # Apply custom styling to make this button taller
+        self._override_responsive.setStyleSheet("""
+            QPushButton {
+                padding: 10px 30px;
+                background-color: #0066cc;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover:enabled {
+                background-color: #0052a3;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
         override_layout.addWidget(self._override_responsive)
 
         self._override_non_responsive = create_secondary_button(
@@ -84,6 +103,25 @@ class DecisionPanel(QWidget):
         self._override_non_responsive.clicked.connect(
             lambda: self._make_decision("non_responsive")
         )
+        # Apply custom styling to make this button taller
+        self._override_non_responsive.setStyleSheet("""
+            QPushButton {
+                padding: 10px 30px;
+                background-color: #0066cc;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover:enabled {
+                background-color: #0052a3;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
         override_layout.addWidget(self._override_non_responsive)
 
         self._override_uncertain = create_warning_button("Override: Uncertain")
