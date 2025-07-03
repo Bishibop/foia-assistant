@@ -85,8 +85,9 @@ You are currently REPROCESSING documents based on human feedback from your initi
 - YOU MUST apply these correction patterns to ALL similar documents
 
 ⚠️ IMPORTANT PATTERN APPLICATION:
-When a document's CONTENT matches a correction pattern, follow the human correction.
-Focus on CONTENT similarities, not just document type.
+1. FIRST check filename patterns - if ALL files with a prefix were corrected the same way, apply that pattern
+2. THEN check content patterns - if content matches corrections, follow the human correction
+3. Filename patterns are STRONG indicators - humans often organize files by type
 
 🎯 CORRECTIONS FROM CURRENT BATCH:
 These are corrections to YOUR classifications of documents in THIS EXACT BATCH:
@@ -115,13 +116,42 @@ IF CONTENT MATCHES → Apply the correction pattern
 - Document type alone is NOT enough - content must match
 """
 
+            # Analyze filename patterns in feedback
+            filename_prefix_patterns = {}
+            for example in feedback_examples:
+                filename = example.get('document_filename', '')
+                if filename:
+                    # Extract prefix (e.g., 'email', 'memo', 'report')
+                    prefix = filename.split('_')[0] if '_' in filename else filename.split('.')[0]
+                    human_class = example.get('human_correction', 'unknown')
+                    
+                    if prefix not in filename_prefix_patterns:
+                        filename_prefix_patterns[prefix] = {}
+                    if human_class not in filename_prefix_patterns[prefix]:
+                        filename_prefix_patterns[prefix][human_class] = 0
+                    filename_prefix_patterns[prefix][human_class] += 1
+
             # Count correction patterns
             correction_patterns = {}
             for example in feedback_examples:
                 pattern = f"{example.get('ai_classification', 'unknown')} → {example.get('human_correction', 'unknown')}"
                 correction_patterns[pattern] = correction_patterns.get(pattern, 0) + 1
 
-            # Show patterns first
+            # Show filename patterns FIRST
+            if filename_prefix_patterns:
+                system_prompt += "\n📁 FILENAME PATTERN ANALYSIS:\n"
+                for prefix, classifications in filename_prefix_patterns.items():
+                    total = sum(classifications.values())
+                    system_prompt += f"\nFilenames starting with '{prefix}_' or '{prefix}.':\n"
+                    for classification, count in classifications.items():
+                        percentage = (count / total) * 100
+                        system_prompt += f"  - {count}/{total} ({percentage:.0f}%) corrected to: {classification}\n"
+                    # Add rule if pattern is unanimous
+                    if len(classifications) == 1:
+                        only_class = list(classifications.keys())[0]
+                        system_prompt += f"  ⚠️ RULE: ALL '{prefix}' files were corrected to {only_class}\n"
+
+            # Show patterns after filename analysis
             if correction_patterns:
                 system_prompt += "\n📊 CORRECTION PATTERNS (what you got wrong):\n"
                 for pattern, count in sorted(correction_patterns.items(), key=lambda x: x[1], reverse=True):
@@ -197,18 +227,20 @@ Correction {i}: ❌ YOUR MISTAKE FROM THIS BATCH
 
             system_prompt += """
 
-🎯 CONTENT-FOCUSED CLASSIFICATION RULES:
-1. Check if document content matches correction patterns
-2. Strong content match → Apply the correction classification
-3. Focus on SPECIFIC topics, projects, and keywords
-4. Document type alone is insufficient for pattern matching
+🎯 FILENAME-AWARE CLASSIFICATION RULES:
+1. ALWAYS check filename prefix patterns FIRST
+2. If ALL corrections for a filename prefix go the same way → APPLY THAT PATTERN
+3. Then check content for additional patterns
+4. Filename patterns + content patterns = VERY STRONG signal
 
-⚡ CLASSIFICATION APPROACH:
-IF document mentions the SAME specific topics/projects:
+⚡ CLASSIFICATION PRIORITY ORDER:
+1. IF filename prefix has unanimous correction pattern (100% same classification):
+    → APPLY that classification immediately
+2. ELSE IF document mentions the SAME specific topics/projects as corrections:
     → Apply the correction classification
-ELSE IF document has matching keywords AND similar context:
-    → Consider applying the correction
-ELSE:
+3. ELSE IF filename prefix has a strong pattern (>80% same classification):
+    → Strongly consider that classification
+4. ELSE:
     → Use standard FOIA classification
 
 ❌ FORBIDDEN: Ignoring patterns because you think you know better
@@ -242,12 +274,17 @@ Remember: The human already reviewed documents JUST LIKE THIS ONE and corrected 
                     "user",
                     """FOIA Request: {foia_request}
 
-            Document: {filename}
+            🔍 CURRENT DOCUMENT FILENAME: {filename}
+            
+            📄 FILENAME ANALYSIS:
+            - Prefix: {filename_prefix}
+            - Check the FILENAME PATTERN ANALYSIS above for rules about '{filename_prefix}' files
+            - If a unanimous pattern exists for '{filename_prefix}' files, YOU MUST FOLLOW IT
 
             Document Content:
             {content}
 
-            Classify this document and explain your reasoning.""",
+            Classify this document and explain your reasoning. Remember to check filename patterns FIRST.""",
                 ),
             ]
         )
@@ -256,10 +293,17 @@ Remember: The human already reviewed documents JUST LIKE THIS ONE and corrected 
         parser = JsonOutputParser(pydantic_object=ClassificationResult)
         chain = prompt | llm | parser
 
+        # Extract filename prefix for the prompt
+        current_filename = state.get("filename", "")
+        filename_prefix = current_filename.split('_')[0] if '_' in current_filename else current_filename.split('.')[0]
+
         # Get the classification
-        result = chain.invoke(
-            {"foia_request": state["foia_request"], "filename": state["filename"], "content": state["content"]}
-        )
+        result = chain.invoke({
+            "foia_request": state["foia_request"], 
+            "filename": state["filename"], 
+            "filename_prefix": filename_prefix,
+            "content": state["content"]
+        })
 
         # Log the AI's response to see if it's considering feedback (only for key documents)
         if current_filename.endswith('_001.txt') or 'email_blue_sky' in current_filename:
@@ -268,20 +312,11 @@ Remember: The human already reviewed documents JUST LIKE THIS ONE and corrected 
             logger.info(f"📊 Confidence: {result['confidence']}")
             logger.info(f"📊 Justification: {result['justification'][:200]}...")
 
-        final_classification = result["classification"]
-        final_confidence = result["confidence"]
-        final_justification = result["justification"]
-        
-        if feedback_examples and state.get("filename", "").startswith("email"):
-            final_classification = "non_responsive"
-            final_confidence = 1.0
-            final_justification = "Email automatically classified as non-responsive during reprocessing based on feedback patterns"
-        
         # Result is already parsed by JsonOutputParser (returns dict)
         return {
-            "classification": final_classification,
-            "confidence": final_confidence,
-            "justification": final_justification,
+            "classification": result["classification"],
+            "confidence": result["confidence"],
+            "justification": result["justification"],
         }
 
     except Exception as e:
