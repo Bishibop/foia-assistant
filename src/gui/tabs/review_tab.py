@@ -1,8 +1,10 @@
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QShowEvent
 from PyQt6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
+    QProgressDialog,
     QPushButton,
     QSplitter,
     QVBoxLayout,
@@ -255,6 +257,11 @@ class ReviewTab(QWidget):
         if self._current_document is None:
             return
 
+        # Handle override non-duplicate decision
+        if decision == "override_non_duplicate":
+            self._handle_override_non_duplicate()
+            return
+
         # Update document with decision
         if decision == "approved":
             self._current_document.human_decision = (
@@ -351,6 +358,10 @@ class ReviewTab(QWidget):
         elif key == Qt.Key.Key_U:
             # U = Uncertain
             self._decision_panel._make_decision("uncertain")
+        elif key == Qt.Key.Key_D:
+            # D = Override Non-Duplicate (only for duplicates)
+            if self._current_document.classification == "duplicate":
+                self._decision_panel._make_decision("override_non_duplicate")
         elif key == Qt.Key.Key_Left:
             # Left arrow = Previous
             self._previous_document()
@@ -472,3 +483,109 @@ class ReviewTab(QWidget):
 
         # Emit signal to request reprocessing immediately
         self.reprocess_requested.emit()
+
+    def _handle_override_non_duplicate(self) -> None:
+        """Handle override non-duplicate decision by reclassifying the document."""
+        if self._current_document is None:
+            return
+            
+        # Create progress dialog
+        progress = QProgressDialog(
+            "Reclassifying document as non-duplicate...", 
+            None,  # No cancel button
+            0, 
+            0,  # Indeterminate progress
+            self
+        )
+        progress.setWindowTitle("Processing")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)  # Show immediately
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        
+        # Disable the cancel button
+        progress.setCancelButton(None)
+        
+        # Show the progress dialog
+        progress.show()
+        QApplication.processEvents()  # Ensure the dialog is displayed
+        
+        # Import what we need for classification
+        from ...langgraph.workflow import create_initial_state, get_compiled_workflow
+        
+        # Get active request for FOIA request text
+        if not self.request_manager:
+            progress.close()
+            return
+            
+        active_request = self.request_manager.get_active_request()
+        if not active_request:
+            progress.close()
+            return
+        
+        try:
+            # Create workflow and state
+            workflow = get_compiled_workflow()
+            initial_state = create_initial_state(
+                self._current_document.filename,
+                active_request.foia_request_text
+            )
+            
+            # Add document content
+            initial_state["content"] = self._current_document.content
+            
+            # Override duplicate flags to force classification
+            initial_state["is_duplicate"] = False
+            initial_state["duplicate_of"] = None
+            initial_state["similarity_score"] = None
+            
+            # Run the workflow
+            QApplication.processEvents()  # Keep UI responsive
+            final_state = workflow.invoke(initial_state)
+            
+            # Update the current document with new classification
+            self._current_document.classification = final_state["classification"]
+            self._current_document.confidence = final_state["confidence"]
+            self._current_document.justification = final_state["justification"]
+            self._current_document.exemptions = final_state.get("exemptions", [])
+            
+            # Clear duplicate metadata
+            self._current_document.is_duplicate = False
+            self._current_document.duplicate_of = None
+            self._current_document.similarity_score = None
+            
+            # Update the UI to show new classification
+            self._decision_panel.display_classification(
+                self._current_document.classification,
+                self._current_document.confidence,
+                self._current_document.justification,
+                self._current_document.exemptions,
+            )
+            
+            # Update in document store if available
+            if self.document_store:
+                self.document_store.update_document(
+                    active_request.id,
+                    self._current_document.filename,
+                    classification=self._current_document.classification,
+                    confidence=self._current_document.confidence,
+                    justification=self._current_document.justification,
+                    exemptions=self._current_document.exemptions,
+                    is_duplicate=False,
+                    duplicate_of=None,
+                    similarity_score=None,
+                )
+            
+            # Close progress dialog
+            progress.close()
+            
+            self._show_status_message("Document reclassified successfully!")
+            
+        except Exception as e:
+            # Close progress dialog on error
+            progress.close()
+            
+            self._show_status_message(f"Error reclassifying document: {str(e)}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error reclassifying document: {e}", exc_info=True)

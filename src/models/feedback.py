@@ -17,6 +17,6 @@ class FeedbackEntry:
 
     # Optional document snippet for context in prompts
     document_snippet: str = ""
-    
+
     # Optional correction reason for better guidance
     correction_reason: str = ""

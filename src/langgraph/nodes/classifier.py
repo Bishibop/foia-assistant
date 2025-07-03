@@ -46,22 +46,11 @@ def classify_document(state: DocumentState) -> dict:
         # Get feedback examples if available
         feedback_examples = state.get("feedback_examples", [])
 
-        # Log feedback information for debugging (only for first document to reduce verbosity)
+        # Log feedback summary once per batch
         current_filename = state.get('filename', 'unknown')
-        if feedback_examples:
-            # Only log detailed info for the first document processed
-            if current_filename.endswith('_001.txt') or 'first' in current_filename.lower() or len(feedback_examples) > 0:
-                logger.info(f"🎯 Classifier received {len(feedback_examples)} feedback examples for document: {current_filename}")
-                # Log a sample of feedback patterns
-                patterns = {}
-                for example in feedback_examples:
-                    pattern = f"{example.get('ai_classification', 'unknown')} → {example.get('human_correction', 'unknown')}"
-                    patterns[pattern] = patterns.get(pattern, 0) + 1
-                logger.info(f"📊 Feedback patterns: {dict(list(patterns.items())[:3])}")  # Show first 3 patterns
-        else:
-            # Only log "no feedback" for first few documents
-            if current_filename.startswith('email') and current_filename.endswith('_001.txt'):
-                logger.info(f"INFO: No feedback examples available for document: {current_filename}")
+        if feedback_examples and not hasattr(classify_document, '_feedback_logged'):
+            logger.info(f"Classifier using {len(feedback_examples)} feedback examples")
+            classify_document._feedback_logged = True
 
         # Build system prompt with feedback examples
         system_prompt = """You are a FOIA (Freedom of Information Act) response analyst.
@@ -92,7 +81,7 @@ You are currently REPROCESSING documents based on human feedback from your initi
 🎯 CORRECTIONS FROM CURRENT BATCH:
 These are corrections to YOUR classifications of documents in THIS EXACT BATCH:
 """
-            
+
             system_prompt += """
 🛑 PRE-CLASSIFICATION CONTENT CHECK:
 Before classifying, check if this document's CONTENT matches correction patterns:
@@ -124,7 +113,7 @@ IF CONTENT MATCHES → Apply the correction pattern
                     # Extract prefix (e.g., 'email', 'memo', 'report')
                     prefix = filename.split('_')[0] if '_' in filename else filename.split('.')[0]
                     human_class = example.get('human_correction', 'unknown')
-                    
+
                     if prefix not in filename_prefix_patterns:
                         filename_prefix_patterns[prefix] = {}
                     if human_class not in filename_prefix_patterns[prefix]:
@@ -171,7 +160,7 @@ IF CONTENT MATCHES → Apply the correction pattern
                 if doc_filename.startswith("email"):
                     doc_type = "EMAIL"
                 elif doc_filename.startswith("memo"):
-                    doc_type = "MEMO" 
+                    doc_type = "MEMO"
                 elif doc_filename.startswith("report"):
                     doc_type = "REPORT"
                 elif doc_filename.startswith("meeting"):
@@ -191,7 +180,7 @@ IF CONTENT MATCHES → Apply the correction pattern
                     key_terms.append("Blue Sky")
                 if "atmospheric" in snippet.lower():
                     key_terms.append("atmospheric")
-                
+
                 unique_terms = list(set(key_terms))[:5]  # Limit to 5 key terms
 
                 system_prompt += f"""
@@ -204,7 +193,7 @@ Correction {i}: ❌ YOUR MISTAKE FROM THIS BATCH
 
                 if correction_reason:
                     system_prompt += f"\n- 🔍 REASON: {correction_reason}"
-                
+
                 system_prompt += f"""
 
 🚨 CONTENT PATTERN APPLICATION:
@@ -248,14 +237,6 @@ Correction {i}: ❌ YOUR MISTAKE FROM THIS BATCH
 
 Remember: The human already reviewed documents JUST LIKE THIS ONE and corrected your mistakes. Don't make the same mistake again!"""
 
-            # Log the enhanced prompt with feedback to verify it's being included (only for first document)
-            if current_filename.endswith('_001.txt') or 'email_blue_sky' in current_filename:
-                logger.info(f"🔍 PROMPT INSPECTION for {current_filename}:")
-                logger.info("📝 System prompt with feedback (first 500 chars):")
-                logger.info(f"'{system_prompt[:500]}...'")
-                if len(system_prompt) > 500:
-                    logger.info("📝 System prompt continuation (chars 500-1000):")
-                    logger.info(f"'{system_prompt[500:1000]}...'")
 
         system_prompt += """
 
@@ -299,18 +280,17 @@ Remember: The human already reviewed documents JUST LIKE THIS ONE and corrected 
 
         # Get the classification
         result = chain.invoke({
-            "foia_request": state["foia_request"], 
-            "filename": state["filename"], 
+            "foia_request": state["foia_request"],
+            "filename": state["filename"],
             "filename_prefix": filename_prefix,
             "content": state["content"]
         })
 
         # Log the AI's response to see if it's considering feedback (only for key documents)
         if current_filename.endswith('_001.txt') or 'email_blue_sky' in current_filename:
-            logger.info(f"🤖 AI RESPONSE for {current_filename}:")
-            logger.info(f"📊 Classification: {result['classification']}")
-            logger.info(f"📊 Confidence: {result['confidence']}")
-            logger.info(f"📊 Justification: {result['justification'][:200]}...")
+            logger.debug(f"AI response for {current_filename}: "
+                        f"classification={result['classification']}, "
+                        f"confidence={result['confidence']:.1%}")
 
         # Result is already parsed by JsonOutputParser (returns dict)
         return {

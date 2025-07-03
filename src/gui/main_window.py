@@ -1,3 +1,4 @@
+from datetime import timezone
 from pathlib import Path
 
 from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget
@@ -14,6 +15,7 @@ from ..constants import (
 from ..processing.document_store import DocumentStore
 from ..processing.feedback_manager import FeedbackManager
 from ..processing.request_manager import RequestManager
+from ..services.embedding_store import EmbeddingStore
 from .styles import MAIN_WINDOW_STYLE
 from .tabs.finalize_tab import FinalizeTab
 from .tabs.intake_tab import IntakeTab
@@ -42,6 +44,7 @@ class MainWindow(QMainWindow):
         self.request_manager = RequestManager()
         self.document_store = DocumentStore()
         self.feedback_manager = FeedbackManager()
+        self.embedding_store = EmbeddingStore()
 
         # Store source folder path
         self.source_folder = None
@@ -57,7 +60,7 @@ class MainWindow(QMainWindow):
 
         # Create tabs with manager references
         self.requests_tab = RequestsTab(self.request_manager)
-        self.intake_tab = IntakeTab(self.request_manager, self.document_store, self.feedback_manager)
+        self.intake_tab = IntakeTab(self.request_manager, self.document_store, self.feedback_manager, self.embedding_store)
         self.review_tab = ReviewTab(self.request_manager, self.document_store, self.feedback_manager)
         self.finalize_tab = FinalizeTab(self.request_manager, self.document_store)
 
@@ -115,7 +118,7 @@ class MainWindow(QMainWindow):
 
                 # Add deadline if specified
                 if "deadline" in req_data:
-                    from datetime import datetime, timezone
+                    from datetime import datetime
 
                     deadline = datetime.strptime(req_data["deadline"], "%Y-%m-%d")
                     deadline = deadline.replace(tzinfo=timezone.utc)
@@ -222,7 +225,7 @@ class MainWindow(QMainWindow):
         # Check if we have the required folder
         if not self.source_folder:
             return
-            
+
         # Delegate to IntakeTab's reprocessing logic
         # We need to call the intake tab's reprocessing method directly
         self.intake_tab._start_reprocessing_with_feedback_from_main(

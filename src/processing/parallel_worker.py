@@ -1,5 +1,6 @@
 """Parallel document processing module for improved performance."""
 
+import logging
 import multiprocessing as mp
 import time
 from collections.abc import Callable
@@ -11,6 +12,8 @@ from typing import Any
 
 from src.models.document import Document
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ProcessingTask:
@@ -20,6 +23,7 @@ class ProcessingTask:
     foia_request: str
     task_id: int
     feedback_examples: list[dict] | None = None
+    embedding_metadata: Document | None = None
 
 
 @dataclass
@@ -54,6 +58,7 @@ class ParallelDocumentProcessor:
         self._document_callback: Callable[[Document], None] | None = None
         self._documents_processed = 0
         self._total_documents = 0
+        self._duplicate_count = 0
         self._start_time: float | None = None
 
     def set_progress_callback(self, callback: Callable[[int, int], None]) -> None:
@@ -63,13 +68,17 @@ class ParallelDocumentProcessor:
     def set_error_callback(self, callback: Callable[[str], None]) -> None:
         """Set the error callback function."""
         self._error_callback = callback
-    
+
     def set_document_callback(self, callback: Callable[[Document], None]) -> None:
         """Set the document completion callback function."""
         self._document_callback = callback
 
     def process_documents(
-        self, document_paths: list[Path], foia_request: str, feedback_examples: list[dict] | None = None
+        self,
+        document_paths: list[Path],
+        foia_request: str,
+        feedback_examples: list[dict] | None = None,
+        embedding_metadata: dict[Path, Document] | None = None
     ) -> list[Document]:
         """Process multiple documents in parallel.
 
@@ -77,25 +86,37 @@ class ParallelDocumentProcessor:
             document_paths: List of document paths to process
             foia_request: The FOIA request text for context
             feedback_examples: List of feedback examples for few-shot learning
+            embedding_metadata: Dictionary mapping paths to Document objects with embedding data
 
         Returns:
             List of processed Document objects
 
         """
         self._documents_processed = 0
-        self._total_documents = len(document_paths)
         self._start_time = time.time()
 
-        # Create processing tasks with feedback examples
+        # Create processing tasks with feedback examples and embedding metadata
         tasks = [
             ProcessingTask(
-                document_path=path, 
-                foia_request=foia_request, 
+                document_path=path,
+                foia_request=foia_request,
                 task_id=idx,
-                feedback_examples=feedback_examples
+                feedback_examples=feedback_examples,
+                embedding_metadata=embedding_metadata.get(path) if embedding_metadata else None
             )
             for idx, path in enumerate(document_paths)
         ]
+        
+        # Set total documents initially
+        self._total_documents = len(document_paths)
+        
+        # Track duplicate count for progress adjustment
+        self._duplicate_count = 0
+        if embedding_metadata:
+            self._duplicate_count = sum(
+                1 for path in document_paths 
+                if path in embedding_metadata and embedding_metadata[path].is_duplicate
+            )
 
         # Create batches (batch size will be determined automatically if not set)
         batches = self._create_batches(tasks)
@@ -175,14 +196,18 @@ class ParallelDocumentProcessor:
             try:
                 result = result_queue.get(timeout=1.0)
                 results.append(result)
-                self._documents_processed += 1
-
-                # Update progress
-                if self._progress_callback:
-                    self._progress_callback(
-                        self._documents_processed, self._total_documents
-                    )
                 
+                # Only count non-duplicates in progress
+                if result.document and result.document.classification != "duplicate":
+                    self._documents_processed += 1
+
+                # Update progress - adjust total by duplicate count
+                if self._progress_callback:
+                    adjusted_total = self._total_documents - self._duplicate_count
+                    self._progress_callback(
+                        self._documents_processed, adjusted_total
+                    )
+
                 # Notify about completed document immediately
                 if result.document and self._document_callback:
                     self._document_callback(result.document)
@@ -266,6 +291,13 @@ def process_document_batch(
                         "filename": task.document_path.name,
                         "content": content,
                         "foia_request": task.foia_request,
+                        # Duplicate detection fields
+                        "is_duplicate": task.embedding_metadata.is_duplicate if task.embedding_metadata else None,
+                        "duplicate_of": task.embedding_metadata.duplicate_of if task.embedding_metadata else None,
+                        "similarity_score": task.embedding_metadata.similarity_score if task.embedding_metadata else None,
+                        "content_hash": task.embedding_metadata.content_hash if task.embedding_metadata else None,
+                        "embedding_generated": task.embedding_metadata.embedding_generated if task.embedding_metadata else None,
+                        # Classification fields
                         "classification": None,
                         "confidence": None,
                         "justification": None,
@@ -290,6 +322,14 @@ def process_document_batch(
                         exemptions=final_state.get("exemptions", []),
                     )
 
+                    # Add embedding metadata if available
+                    if task.embedding_metadata:
+                        document.is_duplicate = task.embedding_metadata.is_duplicate
+                        document.duplicate_of = task.embedding_metadata.duplicate_of
+                        document.similarity_score = task.embedding_metadata.similarity_score
+                        document.content_hash = task.embedding_metadata.content_hash
+                        document.embedding_generated = task.embedding_metadata.embedding_generated
+
                     processing_time = time.time() - start_time
                     result = ProcessingResult(
                         task_id=task.task_id,
@@ -311,5 +351,5 @@ def process_document_batch(
             continue
         except Exception as e:
             # Critical error - log and continue
-            print(f"Worker error: {e}")
+            logger.error(f"Worker error: {e}")
             continue

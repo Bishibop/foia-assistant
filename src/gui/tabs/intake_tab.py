@@ -33,6 +33,7 @@ from ...processing.document_store import DocumentStore
 from ...processing.feedback_manager import FeedbackManager
 from ...processing.request_manager import RequestManager
 from ...processing.worker import ProcessingWorker
+from ...services.embedding_store import EmbeddingStore
 from ..widgets.status_panel import StatusPanel
 
 logger = logging.getLogger(__name__)
@@ -56,11 +57,13 @@ class IntakeTab(QWidget):
         request_manager: RequestManager | None = None,
         document_store: DocumentStore | None = None,
         feedback_manager: FeedbackManager | None = None,
+        embedding_store: EmbeddingStore | None = None,
     ) -> None:
         super().__init__()
         self.request_manager = request_manager
         self.document_store = document_store
         self.feedback_manager = feedback_manager
+        self.embedding_store = embedding_store
         self.selected_folder: Path | None = None
         self.worker: ProcessingWorker | None = None
         self.processed_documents: list[Document] = []
@@ -349,7 +352,8 @@ class IntakeTab(QWidget):
             self.selected_folder,
             active_request.foia_request_text,
             request_id=active_request.id,
-            feedback_manager=self.feedback_manager
+            feedback_manager=self.feedback_manager,
+            embedding_store=self.embedding_store
         )
 
         # Connect signals
@@ -370,6 +374,13 @@ class IntakeTab(QWidget):
         # Connect new parallel processing signals
         self.worker.processing_rate_updated.connect(self.status_panel.update_processing_rate)
         self.worker.worker_count_updated.connect(self.status_panel.update_worker_count)
+        
+        # Connect embedding signals for duplicate detection
+        self.worker.embedding_progress.connect(self.status_panel.update_embedding_progress)
+        self.worker.duplicates_found.connect(self.status_panel.update_duplicate_count)
+        self.worker.status_updated.connect(self.status_panel.add_log_entry)
+        self.worker.embedding_worker_count.connect(self.status_panel.update_embedding_worker_count)
+        self.worker.embedding_rate_updated.connect(self.status_panel.update_embedding_processing_rate)
 
     def _cancel_processing(self) -> None:
         """Cancel the current processing operation."""
@@ -463,6 +474,7 @@ class IntakeTab(QWidget):
             f"Responsive: {stats.get('responsive', 0)}, "
             f"Non-responsive: {stats.get('non_responsive', 0)}, "
             f"Uncertain: {stats.get('uncertain', 0)}, "
+            f"Duplicates: {stats.get('duplicates', 0)}, "
             f"Errors: {stats.get('errors', 0)}"
         )
 
@@ -531,6 +543,12 @@ class IntakeTab(QWidget):
 
         # Clear the list of processed documents for this tab
         self.processed_documents.clear()
+        
+        # Clear embeddings for the old request if switching
+        if self.embedding_store and self.request_manager:
+            # Note: We're not clearing here because we might want to keep embeddings
+            # across request switches. The embedding store handles request isolation.
+            pass
 
         # Update feedback statistics if available
         if self.feedback_manager and self.request_manager:
@@ -593,6 +611,7 @@ class IntakeTab(QWidget):
                 active_request.foia_request_text,
                 request_id=active_request.id,
                 feedback_manager=self.feedback_manager,
+                embedding_store=self.embedding_store,
                 file_list=txt_files_to_process  # Pass the filtered file list
             )
 
@@ -612,18 +631,18 @@ class IntakeTab(QWidget):
         # Set the folder path
         self.selected_folder = folder_path
         self.folder_label.setText(str(self.selected_folder))
-        
+
         # Get unreviewed documents to reprocess
         if not self.request_manager or not self.document_store:
             return
-            
+
         active_request = self.request_manager.get_active_request()
         if not active_request:
             return
-            
+
         unreviewed_docs = self.document_store.get_unreviewed_documents(active_request.id)
         if not unreviewed_docs:
             return
-            
+
         # Start the reprocessing (dialog already confirmed in ReviewTab)
         self._start_processing_unreviewed(unreviewed_docs)

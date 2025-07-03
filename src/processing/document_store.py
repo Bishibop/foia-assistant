@@ -67,6 +67,9 @@ class DocumentStore:
             "exemptions",
             "human_decision",
             "human_feedback",
+            "is_duplicate",
+            "duplicate_of",
+            "similarity_score",
         }
 
         for field, value in kwargs.items():

@@ -9,8 +9,15 @@ class DocumentState(TypedDict):
     content: str
     foia_request: str
 
+    # Duplicate detection fields
+    is_duplicate: bool | None
+    duplicate_of: str | None
+    similarity_score: float | None
+    content_hash: str | None
+    embedding_generated: bool | None
+
     # Classification results
-    classification: str | None  # "responsive", "non_responsive", "uncertain"
+    classification: str | None  # "responsive", "non_responsive", "uncertain", "duplicate"
     confidence: float | None
     justification: str | None
 

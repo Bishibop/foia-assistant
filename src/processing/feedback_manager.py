@@ -59,7 +59,7 @@ class FeedbackManager:
         )
 
         self._feedback[request_id].append(entry)
-        logger.info(
+        logger.debug(
             f"Recorded feedback for {document.filename}: "
             f"{entry.original_classification} -> {human_decision}"
         )
@@ -78,14 +78,9 @@ class FeedbackManager:
         """
         feedback_list = self._feedback.get(request_id, [])
 
-        # Log detailed feedback information for debugging
+        # Log summary only
         if feedback_list:
-            logger.info(f"📋 FeedbackManager: Loading {len(feedback_list)} feedback examples for request {request_id}")
-            for i, feedback in enumerate(feedback_list[:2]):  # Log first 2 examples
-                logger.info(f"📝 Feedback {i+1}: {feedback.document_id} | {feedback.original_classification} → {feedback.human_decision}")
-                logger.info(f"   Snippet: '{feedback.document_snippet[:100]}...'")
-        else:
-            logger.info(f"❌ FeedbackManager: No feedback found for request {request_id}")
+            logger.info(f"Loading {len(feedback_list)} feedback examples for request {request_id}")
 
         # Convert to format for prompt
         examples = []
@@ -99,11 +94,6 @@ class FeedbackManager:
                 "correction_reason": getattr(feedback, 'correction_reason', '')
             })
 
-        # Log the formatted examples that will be sent to the classifier
-        if examples:
-            logger.info(f"🔄 FeedbackManager: Formatted {len(examples)} examples for classifier")
-            for i, example in enumerate(examples[:1]):  # Log first example
-                logger.info(f"📤 Example {i+1} to classifier: {example['document_filename']} | {example['ai_classification']} → {example['human_correction']}")
 
         return examples
 

@@ -182,8 +182,13 @@ class FinalizeTab(QWidget):
 
         toolbar.addStretch()
 
+        # Select All Non-Duplicates button
+        self.select_non_duplicates_btn = create_secondary_button("Select All Non-Duplicates")
+        self.select_non_duplicates_btn.clicked.connect(self._select_non_duplicates)
+        toolbar.addWidget(self.select_non_duplicates_btn)
+
         # Export button (dynamic text)
-        self.export_button = create_secondary_button("Export All")
+        self.export_button = create_secondary_button("Export (0)")
         self.export_button.clicked.connect(self.export_documents)
         toolbar.addWidget(self.export_button)
 
@@ -205,15 +210,15 @@ class FinalizeTab(QWidget):
 
         # Document table
         self.document_table = QTableWidget()
-        self.document_table.setColumnCount(6)
+        self.document_table.setColumnCount(7)
         self.document_table.setHorizontalHeaderLabels(
-            ["", "Filename", "AI", "Human", "Time", "Flag"]
+            ["", "Filename", "AI", "Human", "Duplicate Status", "Time", "Flag"]
         )
         self.document_table.setColumnWidth(
             0, TABLE_CHECKBOX_COLUMN_WIDTH
         )  # Checkbox column
-        self.document_table.setColumnWidth(5, TABLE_FLAG_COLUMN_WIDTH)  # Flag column
-        self.document_table.setSortingEnabled(True)
+        self.document_table.setColumnWidth(6, TABLE_FLAG_COLUMN_WIDTH)  # Flag column
+        self.document_table.setSortingEnabled(False)  # Disable to preserve duplicate grouping
         self.document_table.setAlternatingRowColors(True)
         self.document_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
@@ -364,8 +369,48 @@ class FinalizeTab(QWidget):
         filter_func = filter_strategies.get(filter_index, lambda doc: True)
         filtered = [doc for doc in filtered if filter_func(doc)]
 
-        self.filtered_documents = filtered
+        # Group documents with their duplicates
+        self.filtered_documents = self._group_documents_with_duplicates(filtered)
         self.refresh_table()
+
+    def _group_documents_with_duplicates(self, documents: list[ProcessedDocument]) -> list[ProcessedDocument]:
+        """Group documents so duplicates appear immediately after their originals."""
+        # Create a mapping of filenames to documents
+        doc_map = {doc.document.filename: doc for doc in documents}
+        
+        # Track which documents we've already added to avoid duplicates
+        added = set()
+        grouped = []
+        
+        # First pass: Add originals and their duplicates
+        for doc in documents:
+            if doc.document.filename in added:
+                continue
+                
+            # Add the document
+            grouped.append(doc)
+            added.add(doc.document.filename)
+            
+            # If this is an original document, find and add all its duplicates
+            if not doc.document.is_duplicate:
+                # Find all documents that are duplicates of this one
+                duplicates = [
+                    d for d in documents 
+                    if d.document.is_duplicate 
+                    and d.document.duplicate_of == doc.document.filename
+                    and d.document.filename not in added
+                ]
+                # Sort duplicates by similarity score (highest first)
+                duplicates.sort(
+                    key=lambda x: x.document.similarity_score or 0, 
+                    reverse=True
+                )
+                # Add duplicates right after the original
+                for dup in duplicates:
+                    grouped.append(dup)
+                    added.add(dup.document.filename)
+        
+        return grouped
 
     def refresh_table(self) -> None:
         """Refresh the document table with filtered results."""
@@ -374,18 +419,23 @@ class FinalizeTab(QWidget):
         for row, proc_doc in enumerate(self.filtered_documents):
             doc = proc_doc.document
 
-            # Checkbox with padding
+            # Checkbox with padding (unchecked by default for duplicates)
             checkbox_widget = QWidget()
             checkbox_layout = QHBoxLayout(checkbox_widget)
             checkbox_layout.setContentsMargins(8, 0, 0, 0)  # Add 8px left padding
             checkbox = QCheckBox()
+            checkbox.setChecked(not doc.is_duplicate)  # Uncheck duplicates by default
             checkbox.stateChanged.connect(self.update_export_button)
             checkbox_layout.addWidget(checkbox)
             checkbox_layout.addStretch()
             self.document_table.setCellWidget(row, 0, checkbox_widget)
 
-            # Filename
-            self.document_table.setItem(row, 1, QTableWidgetItem(doc.filename))
+            # Filename (with indentation for duplicates)
+            filename_text = "    ↳ " + doc.filename if doc.is_duplicate else doc.filename
+            filename_item = QTableWidgetItem(filename_text)
+            if doc.is_duplicate:
+                filename_item.setForeground(QColor("#666666"))  # Gray text for duplicates
+            self.document_table.setItem(row, 1, filename_item)
 
             # AI Classification
             ai_item = QTableWidgetItem(doc.classification or "-")
@@ -395,24 +445,53 @@ class FinalizeTab(QWidget):
             human_item = QTableWidgetItem(doc.human_decision or "-")
             self.document_table.setItem(row, 3, human_item)
 
+            # Duplicate Status
+            if doc.is_duplicate:
+                if doc.similarity_score and doc.similarity_score < 1.0:
+                    status_text = f"{doc.similarity_score:.0%} similar"
+                else:
+                    status_text = "Exact duplicate"
+                status_item = QTableWidgetItem(status_text)
+                status_item.setForeground(QColor("#666666"))  # Gray text
+            else:
+                # Check if this original has any duplicates
+                has_duplicates = any(
+                    d.document.is_duplicate and d.document.duplicate_of == doc.filename
+                    for d in self.filtered_documents
+                )
+                status_text = "Original (has duplicates)" if has_duplicates else "Original"
+                status_item = QTableWidgetItem(status_text)
+                if has_duplicates:
+                    status_item.setForeground(QColor("#0066cc"))  # Blue text for originals with duplicates
+            self.document_table.setItem(row, 4, status_item)
+
             # Processing Time
             time_item = QTableWidgetItem(f"{proc_doc.processing_time:.1f}s")
-            self.document_table.setItem(row, 4, time_item)
+            self.document_table.setItem(row, 5, time_item)
 
             # Flag
             flag_item = QTableWidgetItem(
                 FLAG_EMOJI if proc_doc.flagged_for_review else ""
             )
             flag_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.document_table.setItem(row, 5, flag_item)
+            self.document_table.setItem(row, 6, flag_item)
 
-            # Style row if there's a disagreement
-            if doc.classification != doc.human_decision:
-                for col in range(self.document_table.columnCount()):
-                    if col > 0:  # Skip checkbox column
-                        item = self.document_table.item(row, col)
-                        if item:
-                            item.setBackground(QColor(255, 200, 200))
+            # Style row based on status
+            if doc.is_duplicate:
+                # Light gray background for duplicate rows
+                for col in range(1, self.document_table.columnCount()):
+                    item = self.document_table.item(row, col)
+                    if item:
+                        item.setBackground(QColor(245, 245, 245))
+            elif doc.classification != doc.human_decision:
+                # Pink background for disagreements
+                for col in range(1, self.document_table.columnCount()):
+                    item = self.document_table.item(row, col)
+                    if item:
+                        item.setBackground(QColor(255, 200, 200))
+        
+        # Update export button text to reflect selected count
+        self.update_export_button()
 
     def on_document_selected(self) -> None:
         """Handle document selection in the table."""
@@ -467,9 +546,9 @@ class FinalizeTab(QWidget):
                     selected_count += 1
 
         if selected_count > 0:
-            self.export_button.setText(f"Export Selection ({selected_count})")
+            self.export_button.setText(f"Export ({selected_count})")
         else:
-            self.export_button.setText("Export All")
+            self.export_button.setText("Export (0)")
 
     def update_button_states(self) -> None:
         """Update the enabled state of export and FOIA package buttons."""
@@ -478,6 +557,21 @@ class FinalizeTab(QWidget):
 
         self.export_button.setEnabled(has_reviewed_documents)
         self.generate_package_button.setEnabled(has_reviewed_documents)
+        self.select_non_duplicates_btn.setEnabled(has_reviewed_documents)
+
+    def _select_non_duplicates(self) -> None:
+        """Select all non-duplicate documents in the table."""
+        for row in range(self.document_table.rowCount()):
+            if row < len(self.filtered_documents):
+                doc = self.filtered_documents[row].document
+                widget = self.document_table.cellWidget(row, 0)
+                if widget:
+                    checkbox = widget.findChild(QCheckBox)
+                    if checkbox:
+                        checkbox.setChecked(not doc.is_duplicate)
+
+        # Update the export button text
+        self.update_export_button()
 
     def get_selected_documents(self) -> list[ProcessedDocument]:
         """Get list of selected documents."""
@@ -543,20 +637,29 @@ class FinalizeTab(QWidget):
         if not selected and not self.processed_documents:
             QMessageBox.warning(self, "No Documents", "No documents to export.")
             return
+        
+        # If there are documents but none are selected, show a different message
+        if not selected and self.processed_documents:
+            QMessageBox.warning(
+                self, 
+                "No Documents Selected", 
+                "No documents are selected for export. Please select at least one document."
+            )
+            return
 
-        documents_to_export = selected if selected else self.processed_documents
+        documents_to_export = selected
 
         try:
             # Create export directory in Documents folder
             export_base_dir = Path.home() / "Documents" / "FOIA_Exports"
             export_base_dir.mkdir(exist_ok=True)
-            
+
             # Create timestamped subdirectory and remove if exists
-            timestamp = datetime.now(timezone.utc).strftime(
+            timestamp = datetime.now(UTC).strftime(
                 "%Y%m%d_%H%M%S"
             )  # timezone.utc for Python 3.10 compat
             export_dir = export_base_dir / f"Export_{timestamp}"
-            
+
             if export_dir.exists():
                 shutil.rmtree(export_dir)
             export_dir.mkdir(exist_ok=True)
@@ -710,16 +813,16 @@ class FinalizeTab(QWidget):
         """Export documents to Excel format."""
         try:
             from openpyxl import Workbook
-            from openpyxl.styles import Font, PatternFill, Alignment
+            from openpyxl.styles import Alignment, Font, PatternFill
             from openpyxl.utils import get_column_letter
-            
+
             filepath = Path(export_dir) / f"foia_export_{timestamp}.xlsx"
-            
+
             # Create workbook and get active sheet
             wb = Workbook()
             ws = wb.active
             ws.title = "FOIA Documents"
-            
+
             # Define headers
             headers = [
                 "Filename",
@@ -734,29 +837,29 @@ class FinalizeTab(QWidget):
                 "Exemptions",
                 "Human Feedback"
             ]
-            
+
             # Style for headers
             header_font = Font(bold=True, color="FFFFFF")
             header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
             header_alignment = Alignment(horizontal="center", vertical="center")
-            
+
             # Write headers
             for col, header in enumerate(headers, 1):
                 cell = ws.cell(row=1, column=col, value=header)
                 cell.font = header_font
                 cell.fill = header_fill
                 cell.alignment = header_alignment
-            
+
             # Style for disagreement rows
             disagreement_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-            
+
             # Write data
             for row_idx, proc_doc in enumerate(documents, 2):
                 doc = proc_doc.document
-                
+
                 # Check if there's disagreement
                 has_disagreement = doc.classification != doc.human_decision
-                
+
                 # Write data
                 row_data = [
                     doc.filename,
@@ -771,32 +874,32 @@ class FinalizeTab(QWidget):
                     len(doc.exemptions) if doc.exemptions else 0,
                     doc.human_feedback or ""
                 ]
-                
+
                 for col_idx, value in enumerate(row_data, 1):
                     cell = ws.cell(row=row_idx, column=col_idx, value=value)
-                    
+
                     # Highlight disagreement rows
                     if has_disagreement:
                         cell.fill = disagreement_fill
-            
+
             # Auto-adjust column widths
             for column in ws.columns:
                 max_length = 0
                 column_letter = get_column_letter(column[0].column)
-                
+
                 for cell in column:
                     try:
                         if len(str(cell.value)) > max_length:
                             max_length = len(str(cell.value))
                     except:
                         pass
-                
+
                 adjusted_width = min(max_length + 2, 50)
                 ws.column_dimensions[column_letter].width = adjusted_width
-            
+
             # Add summary sheet
             summary_ws = wb.create_sheet("Summary")
-            
+
             # Calculate statistics
             total_docs = len(documents)
             responsive = sum(1 for d in documents if d.document.human_decision == "responsive")
@@ -804,7 +907,7 @@ class FinalizeTab(QWidget):
             uncertain = sum(1 for d in documents if d.document.human_decision == "uncertain")
             agreements = sum(1 for d in documents if d.document.classification == d.document.human_decision)
             flagged = sum(1 for d in documents if d.flagged_for_review)
-            
+
             # Write summary
             summary_data = [
                 ["FOIA Processing Summary", ""],
@@ -817,26 +920,26 @@ class FinalizeTab(QWidget):
                 ["AI/Human Agreement", f"{(agreements/total_docs*100):.1f}%" if total_docs > 0 else "0%"],
                 ["Documents Flagged", flagged],
                 ["", ""],
-                ["Export Date", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")]
+                ["Export Date", datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")]
             ]
-            
+
             for row_idx, (label, value) in enumerate(summary_data, 1):
                 summary_ws.cell(row=row_idx, column=1, value=label).font = Font(bold=True)
                 summary_ws.cell(row=row_idx, column=2, value=value)
-            
+
             # Adjust summary column widths
             summary_ws.column_dimensions['A'].width = 25
             summary_ws.column_dimensions['B'].width = 20
-            
+
             # Save workbook
             wb.save(filepath)
-            
+
             return str(filepath)
-            
+
         except ImportError:
             QMessageBox.critical(
-                self, 
-                "Export Error", 
+                self,
+                "Export Error",
                 "openpyxl is not installed. Please install it with: pip install openpyxl"
             )
             return None
@@ -850,14 +953,21 @@ class FinalizeTab(QWidget):
         """Export documents to PDF format."""
         try:
             from reportlab.lib import colors
-            from reportlab.lib.pagesizes import letter, landscape
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.pagesizes import landscape, letter
+            from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
             from reportlab.lib.units import inch
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+            from reportlab.platypus import (
+                PageBreak,
+                Paragraph,
+                SimpleDocTemplate,
+                Spacer,
+                Table,
+                TableStyle,
+            )
             from reportlab.platypus.tableofcontents import TableOfContents
-            
+
             filepath = Path(export_dir) / f"foia_export_{timestamp}.pdf"
-            
+
             # Create PDF document
             pdf_doc = SimpleDocTemplate(
                 str(filepath),
@@ -867,11 +977,11 @@ class FinalizeTab(QWidget):
                 topMargin=0.5*inch,
                 bottomMargin=0.5*inch
             )
-            
+
             # Container for the 'Flowable' objects
             elements = []
             styles = getSampleStyleSheet()
-            
+
             # Title style
             title_style = ParagraphStyle(
                 'CustomTitle',
@@ -881,11 +991,11 @@ class FinalizeTab(QWidget):
                 spaceAfter=30,
                 alignment=1  # Center alignment
             )
-            
+
             # Add title
             elements.append(Paragraph("FOIA Document Export Report", title_style))
             elements.append(Spacer(1, 0.2*inch))
-            
+
             # Add export date
             date_style = ParagraphStyle(
                 'DateStyle',
@@ -896,12 +1006,12 @@ class FinalizeTab(QWidget):
             )
             elements.append(
                 Paragraph(
-                    f"Generated: {datetime.now(timezone.utc).strftime('%B %d, %Y at %H:%M:%S UTC')}", 
+                    f"Generated: {datetime.now(UTC).strftime('%B %d, %Y at %H:%M:%S UTC')}",
                     date_style
                 )
             )
             elements.append(Spacer(1, 0.5*inch))
-            
+
             # Summary section
             summary_style = ParagraphStyle(
                 'SummaryHeading',
@@ -911,7 +1021,7 @@ class FinalizeTab(QWidget):
                 spaceAfter=12
             )
             elements.append(Paragraph("Summary Statistics", summary_style))
-            
+
             # Calculate statistics
             total_docs = len(documents)
             responsive = sum(1 for d in documents if d.document.human_decision == "responsive")
@@ -919,7 +1029,7 @@ class FinalizeTab(QWidget):
             uncertain = sum(1 for d in documents if d.document.human_decision == "uncertain")
             agreements = sum(1 for d in documents if d.document.classification == d.document.human_decision)
             flagged = sum(1 for d in documents if d.flagged_for_review)
-            
+
             # Create summary table
             summary_data = [
                 ['Metric', 'Value'],
@@ -930,7 +1040,7 @@ class FinalizeTab(QWidget):
                 ['AI/Human Agreement', f"{(agreements/total_docs*100):.1f}%" if total_docs > 0 else "0%"],
                 ['Documents Flagged', str(flagged)]
             ]
-            
+
             summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
             summary_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#366092')),
@@ -945,14 +1055,14 @@ class FinalizeTab(QWidget):
                 ('FONTSIZE', (0, 1), (-1, -1), 10),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
             ]))
-            
+
             elements.append(summary_table)
             elements.append(PageBreak())
-            
+
             # Document details section
             elements.append(Paragraph("Document Details", summary_style))
             elements.append(Spacer(1, 0.2*inch))
-            
+
             # Create document table headers
             headers = [
                 'Filename',
@@ -963,14 +1073,14 @@ class FinalizeTab(QWidget):
                 'Time',
                 'Flag'
             ]
-            
+
             # Prepare data for document table
             doc_data = [headers]
-            
+
             for proc_doc in documents:
                 doc = proc_doc.document
                 has_disagreement = doc.classification != doc.human_decision
-                
+
                 row = [
                     doc.filename[:30] + "..." if len(doc.filename) > 30 else doc.filename,
                     doc.classification or "-",
@@ -981,13 +1091,13 @@ class FinalizeTab(QWidget):
                     "🚩" if proc_doc.flagged_for_review else ""
                 ]
                 doc_data.append(row)
-            
+
             # Create document table with adjusted column widths
             doc_table = Table(
-                doc_data, 
+                doc_data,
                 colWidths=[3*inch, 1.3*inch, 1.3*inch, 0.7*inch, 0.7*inch, 0.8*inch, 0.5*inch]
             )
-            
+
             # Define table style
             table_style = [
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#366092')),
@@ -1002,21 +1112,21 @@ class FinalizeTab(QWidget):
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
                 ('ALIGN', (0, 0), (0, -1), 'LEFT'),  # Left align filenames
             ]
-            
+
             # Highlight disagreement rows
             for i, proc_doc in enumerate(documents, 1):
                 if proc_doc.document.classification != proc_doc.document.human_decision:
                     table_style.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor('#FFC7CE')))
-            
+
             doc_table.setStyle(TableStyle(table_style))
             elements.append(doc_table)
-            
+
             # Add page break before exemptions if needed
             if any(d.document.exemptions for d in documents):
                 elements.append(PageBreak())
                 elements.append(Paragraph("Exemption Details", summary_style))
                 elements.append(Spacer(1, 0.2*inch))
-                
+
                 # Create exemption summary
                 exemption_count = sum(len(d.document.exemptions) if d.document.exemptions else 0 for d in documents)
                 elements.append(
@@ -1026,7 +1136,7 @@ class FinalizeTab(QWidget):
                     )
                 )
                 elements.append(Spacer(1, 0.1*inch))
-                
+
                 # List documents with exemptions
                 for proc_doc in documents:
                     if proc_doc.document.exemptions:
@@ -1036,16 +1146,16 @@ class FinalizeTab(QWidget):
                                 styles['Normal']
                             )
                         )
-            
+
             # Build PDF
             pdf_doc.build(elements)
-            
+
             return str(filepath)
-            
+
         except ImportError:
             QMessageBox.critical(
-                self, 
-                "Export Error", 
+                self,
+                "Export Error",
                 "reportlab is not installed. Please install it with: pip install reportlab"
             )
             return None
@@ -1083,7 +1193,7 @@ class FinalizeTab(QWidget):
             # Create package directory in Documents folder
             package_base_dir = Path.home() / "Documents" / "FOIA_Packages"
             package_base_dir.mkdir(exist_ok=True)
-            
+
             # Get request name if available
             request_name = ""
             if self.request_manager:
@@ -1092,10 +1202,10 @@ class FinalizeTab(QWidget):
                     # Sanitize request name for folder
                     request_name = "_" + "".join(c for c in active_request.name if c.isalnum() or c in (' ', '-', '_')).rstrip()
                     request_name = request_name.replace(' ', '_')
-            
+
             # Create package directory (overwrite if exists)
             package_dir = package_base_dir / f"FOIA_Response{request_name}"
-            
+
             if package_dir.exists():
                 shutil.rmtree(package_dir)
             package_dir.mkdir(exist_ok=True)
@@ -1191,7 +1301,7 @@ class FinalizeTab(QWidget):
             f.write("FOIA PROCESSING SUMMARY REPORT\n")
             f.write("=" * 50 + "\n\n")
             f.write(
-                f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}\n\n"  # timezone.utc for Python 3.10 compat
+                f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')}\n\n"  # timezone.utc for Python 3.10 compat
             )
             f.write("DOCUMENT STATISTICS:\n")
             f.write(f"Total Documents Processed: {stats.total}\n")
@@ -1214,7 +1324,7 @@ class FinalizeTab(QWidget):
         with open(cover_letter_path, "w", encoding="utf-8") as f:
             f.write("[AGENCY LETTERHEAD]\n\n")
             f.write(
-                f"Date: {datetime.now(timezone.utc).strftime('%B %d, %Y')}\n\n"
+                f"Date: {datetime.now(UTC).strftime('%B %d, %Y')}\n\n"
             )  # timezone.utc for Python 3.10 compat
             f.write("[Requester Name]\n")
             f.write("[Requester Address]\n\n")

@@ -102,6 +102,14 @@ class DecisionPanel(QWidget):
         override_layout.addWidget(self._override_uncertain)
 
         decision_layout.addLayout(override_layout)
+        
+        # Override non-duplicate button (hidden by default)
+        self._override_non_duplicate = create_warning_button("Override - Non-Duplicate")
+        self._override_non_duplicate.clicked.connect(
+            lambda: self._make_decision("override_non_duplicate")
+        )
+        self._override_non_duplicate.setVisible(False)
+        decision_layout.addWidget(self._override_non_duplicate)
 
         # Add spacing between buttons and feedback
         decision_layout.addSpacing(25)
@@ -121,12 +129,12 @@ class DecisionPanel(QWidget):
         layout.addWidget(decision_group)
 
         # Keyboard shortcuts hint
-        shortcuts_label = QLabel(
+        self._shortcuts_label = QLabel(
             "Shortcuts: Space = Approve | R = Responsive | N = Non-Responsive | U = Uncertain"
         )
-        shortcuts_label.setStyleSheet("color: gray; font-size: 11px;")
-        shortcuts_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(shortcuts_label)
+        self._shortcuts_label.setStyleSheet("color: gray; font-size: 11px;")
+        self._shortcuts_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._shortcuts_label)
 
         layout.addStretch()
         self.setLayout(layout)
@@ -148,6 +156,7 @@ class DecisionPanel(QWidget):
                 "responsive": STAT_COLOR_RESPONSIVE,
                 "non_responsive": STAT_COLOR_NON_RESPONSIVE,
                 "uncertain": STAT_COLOR_UNCERTAIN,
+                "duplicate": "#666666",  # Gray color for duplicates
             }.get(classification, "black")
 
             self._classification_label.setText(
@@ -192,19 +201,47 @@ class DecisionPanel(QWidget):
         self._feedback_text.clear()
 
     def _enable_buttons(self, classification: str | None = None) -> None:
-        # Always enable approve button
-        self._approve_button.setEnabled(True)
-
-        # Enable override buttons, but disable the one matching current classification
-        self._override_responsive.setEnabled(classification != "responsive")
-        self._override_non_responsive.setEnabled(classification != "non_responsive")
-        self._override_uncertain.setEnabled(classification != "uncertain")
+        # For duplicates, show only approve and override non-duplicate buttons
+        if classification == "duplicate":
+            self._approve_button.setEnabled(True)
+            self._approve_button.setText("Approve (Skip Duplicate)")
+            # Hide normal override buttons
+            self._override_responsive.setVisible(False)
+            self._override_non_responsive.setVisible(False)
+            self._override_uncertain.setVisible(False)
+            # Show override non-duplicate button
+            self._override_non_duplicate.setVisible(True)
+            self._override_non_duplicate.setEnabled(True)
+            # Update shortcuts label
+            self._shortcuts_label.setText(
+                "Shortcuts: Space = Approve | D = Override Non-Duplicate"
+            )
+        else:
+            # Normal behavior for non-duplicates
+            self._approve_button.setEnabled(True)
+            self._approve_button.setText("Approve AI Decision")
+            # Show normal override buttons
+            self._override_responsive.setVisible(True)
+            self._override_non_responsive.setVisible(True)
+            self._override_uncertain.setVisible(True)
+            # Hide override non-duplicate button
+            self._override_non_duplicate.setVisible(False)
+            # Restore normal shortcuts label
+            self._shortcuts_label.setText(
+                "Shortcuts: Space = Approve | R = Responsive | N = Non-Responsive | U = Uncertain"
+            )
+            
+            # Enable override buttons, but disable the one matching current classification
+            self._override_responsive.setEnabled(classification != "responsive")
+            self._override_non_responsive.setEnabled(classification != "non_responsive")
+            self._override_uncertain.setEnabled(classification != "uncertain")
 
     def _disable_buttons(self) -> None:
         self._approve_button.setEnabled(False)
         self._override_responsive.setEnabled(False)
         self._override_non_responsive.setEnabled(False)
         self._override_uncertain.setEnabled(False)
+        self._override_non_duplicate.setEnabled(False)
 
     def clear(self) -> None:
         """Clear all classification display and disable buttons."""
