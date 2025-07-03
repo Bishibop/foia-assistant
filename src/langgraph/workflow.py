@@ -97,6 +97,9 @@ def create_initial_state(filename: str, foia_request: str) -> DocumentState:
         "patterns_learned": None,
         "feedback_examples": None,
         "error": None,
+        # Audit logging fields
+        "audit_manager": None,
+        "request_id": None,
     }
 
 

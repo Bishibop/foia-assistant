@@ -294,13 +294,24 @@ Remember: The human already reviewed documents JUST LIKE THIS ONE and corrected 
 
         # Log to audit trail if audit_manager is available
         audit_manager = state.get("audit_manager")
+        filename = state.get("filename", "unknown")
+        request_id = state.get("request_id", "unknown")
+        
+        logger.info(f"🔍 CLASSIFIER: About to log classification for {filename}")
+        logger.info(f"🔍 CLASSIFIER: audit_manager type: {type(audit_manager)}")
+        logger.info(f"🔍 CLASSIFIER: request_id: {request_id}")
+        
         if audit_manager:
+            logger.info(f"🔍 CLASSIFIER: Calling log_classification for {filename}: {result['classification']} ({result['confidence']:.2f})")
             audit_manager.log_classification(
-                filename=state.get("filename", "unknown"),
+                filename=filename,
                 result=result["classification"],
                 confidence=result["confidence"],
-                request_id=state.get("request_id", "unknown")
+                request_id=request_id
             )
+            logger.info(f"🔍 CLASSIFIER: log_classification call completed")
+        else:
+            logger.warning(f"🔍 CLASSIFIER: No audit_manager in state!")
 
         # Result is already parsed by JsonOutputParser (returns dict)
         return {

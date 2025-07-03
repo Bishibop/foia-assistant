@@ -134,9 +134,11 @@ class ProcessingWorker(QThread):
             # Phase 2: Process documents through classification workflow
             if self.use_parallel and len(txt_files) > 3:
                 # Use parallel processing for 4+ documents
+                logger.info(f"🔍 WORKER: Using PARALLEL processing for {len(txt_files)} documents")
                 self._process_parallel(txt_files)
             else:
                 # Use sequential processing for small batches
+                logger.info(f"🔍 WORKER: Using SEQUENTIAL processing for {len(txt_files)} documents")
                 self._process_sequential(txt_files)
 
             # Final progress update - use non-duplicate count
@@ -155,8 +157,10 @@ class ProcessingWorker(QThread):
         """
         # Choose between parallel and sequential processing based on file count
         if len(txt_files) > 5:  # Use parallel for more than 5 files
+            logger.info(f"🔍 WORKER: Using PARALLEL embedding generation for {len(txt_files)} documents")
             self._generate_embeddings_parallel(txt_files)
         else:
+            logger.info(f"🔍 WORKER: Using SEQUENTIAL embedding generation for {len(txt_files)} documents")
             self._generate_embeddings_sequential(txt_files)
 
     def _generate_embeddings_sequential(self, txt_files: list[Path]) -> None:
@@ -346,6 +350,25 @@ class ProcessingWorker(QThread):
             txt_files, self.request_id, self.embedding_store
         )
         
+        # Log embedding events to audit trail (since parallel processor doesn't have audit support yet)
+        if self.audit_manager and self.request_id:
+            logger.info(f"🔍 WORKER: Adding audit entries for {len(self._document_metadata)} embedding results")
+            for doc_path, document in self._document_metadata.items():
+                self.audit_manager.log_embedding(
+                    filename=doc_path.name,
+                    request_id=self.request_id,
+                    success=document.embedding_generated if document.embedding_generated is not None else True
+                )
+                
+                # Also log duplicate detection results
+                self.audit_manager.log_duplicate(
+                    filename=doc_path.name,
+                    request_id=self.request_id,
+                    is_duplicate=document.is_duplicate,
+                    duplicate_of=document.duplicate_of,
+                    similarity_score=document.similarity_score
+                )
+        
         # Emit final counts
         self.duplicates_found.emit(duplicate_count)
         self.stats["duplicates"] = duplicate_count
@@ -447,13 +470,38 @@ class ProcessingWorker(QThread):
             self.document_processed.emit(document)
             self.stats_updated.emit(self.stats.copy())
 
+        def handle_audit_events(audit_events) -> None:
+            """Handle audit events from parallel processing."""
+            logger.info(f"🔍 WORKER: handle_audit_events called with {len(audit_events)} events")
+            if self.audit_manager:
+                for event in audit_events:
+                    logger.info(f"🔍 WORKER: Processing audit event {event.event_type} for {event.filename}")
+                    if event.event_type == "classification":
+                        self.audit_manager.log_classification(
+                            filename=event.filename,
+                            result=event.details["result"],
+                            confidence=event.details["confidence"],
+                            request_id=event.request_id
+                        )
+                        logger.info(f"🔍 WORKER: Logged classification to audit manager")
+                    elif event.event_type == "error":
+                        self.audit_manager.log_error(
+                            filename=event.filename,
+                            error_message=event.details["error_message"],
+                            request_id=event.request_id
+                        )
+                        logger.info(f"🔍 WORKER: Logged error to audit manager")
+            else:
+                logger.warning(f"🔍 WORKER: No audit_manager available!")
+
         self._parallel_processor.set_progress_callback(update_progress)
         self._parallel_processor.set_error_callback(handle_error)
         self._parallel_processor.set_document_callback(handle_document)
+        self._parallel_processor.set_audit_callback(handle_audit_events)
 
         # Process documents with feedback examples and embedding metadata
         self._parallel_processor.process_documents(
-            txt_files, self.foia_request, self.feedback_examples, embedding_metadata
+            txt_files, self.foia_request, self.feedback_examples, embedding_metadata, self.request_id
         )
 
         # Documents are already emitted via callback as they complete

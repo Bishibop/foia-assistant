@@ -34,3 +34,7 @@ class DocumentState(TypedDict):
 
     # Workflow control
     error: str | None
+    
+    # Audit logging (added for audit trail support)
+    audit_manager: object | None  # AuditManager or AuditProxy instance
+    request_id: str | None

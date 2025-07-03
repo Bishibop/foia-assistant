@@ -13,7 +13,7 @@ TAB_REQUESTS = "Requests"
 TAB_INTAKE = "Intake"
 TAB_REVIEW = "Review"
 TAB_FINALIZE = "Finalize"
-TAB_AUDIT = "Audit"
+TAB_AUDIT = "Audits"
 
 # GUI Layout constants
 SPLITTER_SIZES = [400, 600]  # 40% config, 60% status

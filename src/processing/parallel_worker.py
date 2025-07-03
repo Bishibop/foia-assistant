@@ -24,6 +24,48 @@ class ProcessingTask:
     task_id: int
     feedback_examples: list[dict] | None = None
     embedding_metadata: Document | None = None
+    request_id: str | None = None
+    # Note: audit_manager can't be passed directly due to multiprocessing serialization
+    # Instead, we'll create a proxy that sends audit events back to main process
+
+
+@dataclass
+class AuditEvent:
+    """Represents an audit event to be logged."""
+    event_type: str
+    filename: str
+    request_id: str
+    details: dict  # Contains event-specific data
+
+
+class AuditProxy:
+    """Proxy for audit manager that collects events for later logging."""
+    
+    def __init__(self, request_id: str | None = None):
+        self.request_id = request_id
+        self.events: list[AuditEvent] = []
+    
+    def log_classification(self, filename: str, result: str, confidence: float, request_id: str) -> None:
+        """Log an AI classification event."""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"🔍 AUDIT PROXY: Logging classification for {filename}: {result} ({confidence:.2f})")
+        
+        self.events.append(AuditEvent(
+            event_type="classification",
+            filename=filename,
+            request_id=request_id,
+            details={"result": result, "confidence": confidence}
+        ))
+    
+    def log_error(self, filename: str | None, error_message: str, request_id: str) -> None:
+        """Log an error event."""
+        self.events.append(AuditEvent(
+            event_type="error", 
+            filename=filename or "unknown",
+            request_id=request_id,
+            details={"error_message": error_message}
+        ))
 
 
 @dataclass
@@ -34,6 +76,11 @@ class ProcessingResult:
     document: Document | None = None
     error: str | None = None
     processing_time: float = 0.0
+    audit_events: list[AuditEvent] = None  # Audit events to be logged in main process
+    
+    def __post_init__(self):
+        if self.audit_events is None:
+            self.audit_events = []
 
 
 class ParallelDocumentProcessor:
@@ -56,6 +103,7 @@ class ParallelDocumentProcessor:
         self._progress_callback: Callable[[int, int], None] | None = None
         self._error_callback: Callable[[str], None] | None = None
         self._document_callback: Callable[[Document], None] | None = None
+        self._audit_callback: Callable[[list[AuditEvent]], None] | None = None
         self._documents_processed = 0
         self._total_documents = 0
         self._duplicate_count = 0
@@ -73,12 +121,17 @@ class ParallelDocumentProcessor:
         """Set the document completion callback function."""
         self._document_callback = callback
 
+    def set_audit_callback(self, callback: Callable[[list[AuditEvent]], None]) -> None:
+        """Set the audit events callback function."""
+        self._audit_callback = callback
+
     def process_documents(
         self,
         document_paths: list[Path],
         foia_request: str,
         feedback_examples: list[dict] | None = None,
-        embedding_metadata: dict[Path, Document] | None = None
+        embedding_metadata: dict[Path, Document] | None = None,
+        request_id: str | None = None
     ) -> list[Document]:
         """Process multiple documents in parallel.
 
@@ -102,7 +155,8 @@ class ParallelDocumentProcessor:
                 foia_request=foia_request,
                 task_id=idx,
                 feedback_examples=feedback_examples,
-                embedding_metadata=embedding_metadata.get(path) if embedding_metadata else None
+                embedding_metadata=embedding_metadata.get(path) if embedding_metadata else None,
+                request_id=request_id
             )
             for idx, path in enumerate(document_paths)
         ]
@@ -211,6 +265,16 @@ class ParallelDocumentProcessor:
                 # Notify about completed document immediately
                 if result.document and self._document_callback:
                     self._document_callback(result.document)
+                
+                # Process audit events
+                if result.audit_events:
+                    logger.info(f"🔍 PARALLEL PROCESSOR: Received {len(result.audit_events)} audit events for processing")
+                    if self._audit_callback:
+                        self._audit_callback(result.audit_events)
+                    else:
+                        logger.warning(f"🔍 PARALLEL PROCESSOR: No audit callback set!")
+                else:
+                    logger.info(f"🔍 PARALLEL PROCESSOR: No audit events in result")
             except Empty:
                 # Check if any workers died
                 for worker in workers:
@@ -282,32 +346,31 @@ def process_document_batch(
             # Process each document in the batch
             for task in batch:
                 start_time = time.time()
+                audit_proxy = AuditProxy(task.request_id)
+                
                 try:
                     # Read document content
                     content = task.document_path.read_text(encoding="utf-8")
 
-                    # Run through workflow
-                    state = {
-                        "filename": task.document_path.name,
-                        "content": content,
-                        "foia_request": task.foia_request,
-                        # Duplicate detection fields
-                        "is_duplicate": task.embedding_metadata.is_duplicate if task.embedding_metadata else None,
-                        "duplicate_of": task.embedding_metadata.duplicate_of if task.embedding_metadata else None,
-                        "similarity_score": task.embedding_metadata.similarity_score if task.embedding_metadata else None,
-                        "content_hash": task.embedding_metadata.content_hash if task.embedding_metadata else None,
-                        "embedding_generated": task.embedding_metadata.embedding_generated if task.embedding_metadata else None,
-                        # Classification fields
-                        "classification": None,
-                        "confidence": None,
-                        "justification": None,
-                        "exemptions": None,
-                        "human_decision": None,
-                        "human_feedback": None,
-                        "patterns_learned": None,
-                        "feedback_examples": task.feedback_examples,
-                        "error": None,
-                    }
+                    # Import here to avoid pickling issues
+                    from src.langgraph.workflow import create_initial_state
+                    
+                    # Create initial state using the proper function
+                    state = create_initial_state(task.document_path.name, task.foia_request)
+                    
+                    # Add content and other fields
+                    state["content"] = content
+                    state["feedback_examples"] = task.feedback_examples
+                    state["audit_manager"] = audit_proxy
+                    state["request_id"] = task.request_id
+                    
+                    # Add embedding metadata if available
+                    if task.embedding_metadata:
+                        state["is_duplicate"] = task.embedding_metadata.is_duplicate
+                        state["duplicate_of"] = task.embedding_metadata.duplicate_of
+                        state["similarity_score"] = task.embedding_metadata.similarity_score
+                        state["content_hash"] = task.embedding_metadata.content_hash
+                        state["embedding_generated"] = task.embedding_metadata.embedding_generated
 
                     # Execute workflow
                     final_state = workflow.invoke(state)
@@ -331,18 +394,34 @@ def process_document_batch(
                         document.embedding_generated = task.embedding_metadata.embedding_generated
 
                     processing_time = time.time() - start_time
+                    
+                    # Debug logging
+                    logger.info(f"🔍 WORKER: Processing complete for {task.document_path.name}, audit events: {len(audit_proxy.events)}")
+                    for event in audit_proxy.events:
+                        logger.info(f"🔍 WORKER: Event {event.event_type} for {event.filename}")
+                    
                     result = ProcessingResult(
                         task_id=task.task_id,
                         document=document,
                         processing_time=processing_time,
+                        audit_events=audit_proxy.events,
                     )
 
                 except Exception as e:
                     processing_time = time.time() - start_time
+                    # Log the error through audit proxy
+                    if task.request_id:
+                        audit_proxy.log_error(
+                            filename=task.document_path.name,
+                            error_message=str(e),
+                            request_id=task.request_id
+                        )
+                    
                     result = ProcessingResult(
                         task_id=task.task_id,
                         error=str(e),
                         processing_time=processing_time,
+                        audit_events=audit_proxy.events,
                     )
 
                 result_queue.put(result)

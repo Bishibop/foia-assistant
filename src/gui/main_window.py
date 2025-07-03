@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
         self.intake_tab = IntakeTab(self.request_manager, self.document_store, self.feedback_manager, self.embedding_store, self.audit_manager)
         self.review_tab = ReviewTab(self.request_manager, self.document_store, self.feedback_manager, self.audit_manager)
         self.finalize_tab = FinalizeTab(self.request_manager, self.document_store, self.audit_manager)
-        self.audit_tab = AuditTab(self.audit_manager)
+        self.audit_tab = AuditTab(self.audit_manager, self.request_manager, self.document_store)
 
         # Add tabs to widget (Requests tab first)
         self.tab_widget.addTab(self.requests_tab, TAB_REQUESTS)

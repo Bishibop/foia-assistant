@@ -24,6 +24,9 @@ class AuditManager:
             request_id: The FOIA request ID
 
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         entry = AuditEntry(
             request_id=request_id,
             document_filename=filename,
@@ -32,6 +35,7 @@ class AuditManager:
             details=f"AI Classification - Confidence: {confidence:.2f}"
         )
         self._entries.append(entry)
+        logger.info(f"🔍 AUDIT MANAGER: Added classification entry for {filename}. Total entries: {len(self._entries)}")
 
     def log_review(self, filename: str, ai_result: str,
                   user_decision: str, request_id: str) -> None:
@@ -194,6 +198,9 @@ class AuditManager:
             error_message: Error message if failed (optional)
 
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if success:
             details = "Embedding generated successfully"
             if processing_time:
@@ -208,6 +215,7 @@ class AuditManager:
             details=details
         )
         self._entries.append(entry)
+        logger.info(f"🔍 AUDIT MANAGER: Added embedding entry for {filename}. Total entries: {len(self._entries)}")
 
     def log_duplicate(self, filename: str, request_id: str, 
                      is_duplicate: bool, duplicate_of: str | None = None,
