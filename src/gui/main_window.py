@@ -93,6 +93,12 @@ class MainWindow(QMainWindow):
                     "deadline": "2025-07-04",
                 },
                 {
+                    "name": "F-2024-00128",
+                    "description": "Azure Sky Initiative", 
+                    "foia_text": "All records, correspondence, and documentation related to the Azure Sky Initiative, including project proposals, budget allocations, and status reports from June 2023 to present.",
+                    "deadline": "2025-08-15",
+                },
+                {
                     "name": "F-2024-00124",
                     "description": "Climate Research Grants",
                     "foia_text": "All grant applications, funding decisions, and correspondence related to climate change research funding awarded by the agency between October 2022 and December 2024.",
@@ -142,6 +148,7 @@ class MainWindow(QMainWindow):
         self.intake_tab.refresh_request_context()
         self.review_tab.refresh_request_context()
         self.finalize_tab.refresh_request_context()
+        self.audit_tab.refresh_request_context()
 
     def _connect_signals(self) -> None:
         """Connect signals between tabs."""
@@ -212,6 +219,7 @@ class MainWindow(QMainWindow):
         self.intake_tab.refresh_request_context()
         self.review_tab.refresh_request_context()
         self.finalize_tab.refresh_request_context()
+        self.audit_tab.refresh_request_context()
 
     def _on_request_deleted(self, request_id: str) -> None:
         """Handle request deletion."""

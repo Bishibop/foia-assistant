@@ -44,12 +44,17 @@ class AuditTab(QWidget):
         # Title
         title_label = create_title_label("Audits")
         
+        # Active request display
+        self.active_request_label = QLabel("No active request")
+        self.active_request_label.setStyleSheet("color: #666666; font-size: 12px; font-style: italic;")
+        
         # Export button
         self.export_button = QPushButton("Export Audit")
         self.export_button.setStyleSheet(BUTTON_STYLE_PRIMARY)
         self.export_button.clicked.connect(self._export_audit)
         
         header_layout.addWidget(title_label)
+        header_layout.addWidget(self.active_request_label)
         header_layout.addStretch()
         header_layout.addWidget(self.export_button)
         
@@ -87,7 +92,8 @@ class AuditTab(QWidget):
         
         layout.addWidget(splitter)
         
-        # Refresh the display
+        # Refresh the display and active request context
+        self._update_active_request_display()
         self.refresh()
     
     def _create_document_panel(self) -> QWidget:
@@ -158,7 +164,18 @@ class AuditTab(QWidget):
     
     def refresh(self):
         """Refresh the document table and audit display with latest entries."""
-        entries = self.audit_manager.get_entries()
+        # Get all entries first
+        all_entries = self.audit_manager.get_entries()
+        
+        # Filter entries by active request if available
+        if self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                entries = [e for e in all_entries if e.request_id == active_request.id]
+            else:
+                entries = []  # No active request, show no entries
+        else:
+            entries = all_entries  # No request manager, show all entries
         
         # Update export button state
         count = len(entries)
@@ -170,10 +187,19 @@ class AuditTab(QWidget):
         # Refresh the table
         self.refresh_table()
         
-        # Show overall message if no documents
+        # Show appropriate message if no documents
         if not self.documents_with_audits:
-            self.audit_display.setText("No audit entries yet. Start processing documents to see activity.")
-            self.document_audit_label.setText("No documents with audit entries")
+            if self.request_manager:
+                active_request = self.request_manager.get_active_request()
+                if active_request:
+                    self.audit_display.setText(f"No audit entries for request: {active_request.name}")
+                    self.document_audit_label.setText(f"No audit entries for: {active_request.name}")
+                else:
+                    self.audit_display.setText("No active request selected.")
+                    self.document_audit_label.setText("No active request selected")
+            else:
+                self.audit_display.setText("No audit entries yet. Start processing documents to see activity.")
+                self.document_audit_label.setText("No documents with audit entries")
         else:
             # Select first document if none selected
             if len(self.documents_with_audits) > 0 and not self.current_document:
@@ -434,6 +460,25 @@ class AuditTab(QWidget):
                         'user_decision': entry.user_decision or ''
                     })
     
+    def refresh_request_context(self) -> None:
+        """Refresh the audit display for the active request."""
+        self._update_active_request_display()
+        
+        # Clear current selection and refresh data
+        self.current_document = None
+        self.refresh()
+    
+    def _update_active_request_display(self) -> None:
+        """Update the active request label."""
+        if self.request_manager:
+            active_request = self.request_manager.get_active_request()
+            if active_request:
+                self.active_request_label.setText(f"Active Request: {active_request.name}")
+            else:
+                self.active_request_label.setText("No active request selected")
+        else:
+            self.active_request_label.setText("No request manager")
+
     def on_tab_selected(self):
         """Called when this tab is selected - refresh the display."""
         self.refresh()
