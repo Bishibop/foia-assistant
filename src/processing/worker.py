@@ -128,9 +128,6 @@ class ProcessingWorker(QThread):
             if self.embedding_store and self.request_id:
                 self._generate_embeddings_phase(txt_files)
 
-            # Calculate the number of documents that need classification (total - duplicates)
-            non_duplicate_count = len(txt_files) - self.stats.get("duplicates", 0)
-            
             # Phase 2: Process documents through classification workflow
             if self.use_parallel and len(txt_files) > 3:
                 # Use parallel processing for 4+ documents
@@ -141,8 +138,12 @@ class ProcessingWorker(QThread):
                 logger.info(f"🔍 WORKER: Using SEQUENTIAL processing for {len(txt_files)} documents")
                 self._process_sequential(txt_files)
 
-            # Final progress update - use non-duplicate count
-            self.progress_updated.emit(non_duplicate_count, non_duplicate_count)
+            # Calculate the final non-duplicate count AFTER processing
+            # (in case duplicate count was updated during processing)
+            final_non_duplicate_count = len(txt_files) - self.stats.get("duplicates", 0)
+            
+            # Final progress update - use correct count
+            self.progress_updated.emit(final_non_duplicate_count, final_non_duplicate_count)
             self.processing_complete.emit()
 
         except Exception as e:
@@ -377,6 +378,12 @@ class ProcessingWorker(QThread):
 
     def _process_sequential(self, txt_files: list[Path]) -> None:
         """Process documents sequentially (original implementation)."""
+        # Reset duplicate count for reprocessing
+        if self.feedback_examples:
+            self.duplicates_found.emit(0)
+            self.stats["duplicates"] = 0
+            self.stats_updated.emit(self.stats.copy())
+            
         # Calculate adjusted total (excluding duplicates)
         duplicate_count = self.stats.get("duplicates", 0)
         adjusted_total = len(txt_files) - duplicate_count
@@ -387,8 +394,9 @@ class ProcessingWorker(QThread):
                 break
 
             # Check if this is a duplicate before processing
+            # But skip duplicate checking during reprocessing with feedback
             is_duplicate = False
-            if file_path in self._document_metadata:
+            if file_path in self._document_metadata and not self.feedback_examples:
                 is_duplicate = self._document_metadata[file_path].is_duplicate
             
             # Emit progress update using adjusted counts
@@ -430,11 +438,23 @@ class ProcessingWorker(QThread):
         # Create parallel processor (workflow created in each worker)
         self._parallel_processor = ParallelDocumentProcessor()
 
+        # Reset duplicate count for reprocessing
+        if self.feedback_examples:
+            self.duplicates_found.emit(0)
+            self.stats["duplicates"] = 0
+            self.stats_updated.emit(self.stats.copy())
+
         # Emit worker count
         self.worker_count_updated.emit(self._parallel_processor.num_workers)
 
-        # Pass embedding metadata if available
-        embedding_metadata = self._document_metadata if self._document_metadata else None
+        # Pass embedding metadata if available, but NOT during reprocessing with feedback
+        # When reprocessing, we don't want to carry over old duplicate flags
+        if self.feedback_examples:
+            # This is reprocessing with feedback - don't use old metadata
+            embedding_metadata = None
+        else:
+            # Normal processing - use metadata if available
+            embedding_metadata = self._document_metadata if self._document_metadata else None
 
         # Set up callbacks
         def update_progress(current: int, total: int) -> None:
@@ -519,7 +539,8 @@ class ProcessingWorker(QThread):
 
         """
         # Check if we have pre-computed metadata from embeddings phase
-        if file_path in self._document_metadata:
+        # But don't use old metadata during reprocessing with feedback
+        if file_path in self._document_metadata and not self.feedback_examples:
             doc_metadata = self._document_metadata[file_path]
             content = doc_metadata.content
         else:

@@ -94,9 +94,9 @@ class MainWindow(QMainWindow):
                 },
                 {
                     "name": "F-2024-00128",
-                    "description": "Azure Sky Initiative", 
-                    "foia_text": "All records, correspondence, and documentation related to the Azure Sky Initiative, including project proposals, budget allocations, and status reports from June 2023 to present.",
-                    "deadline": "2025-08-15",
+                    "description": "Blue Sky Project",
+                    "foia_text": "All emails, documents, and communications related to the Blue Sky Project between January 2023 and September 2024.",
+                    "deadline": "2025-07-04",
                 },
                 {
                     "name": "F-2024-00124",
